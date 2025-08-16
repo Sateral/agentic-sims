@@ -40,4 +40,21 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# generated
 /lib/generated/prisma
+
+# Python virtual environment
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Video output directory
+/tmp/videos/
+videos/
+
+# Test files (optional - you can commit these if you want)
+test_python_env.py
+check_python_path.py

@@ -110,11 +110,10 @@ export class UploadAgent {
   }
 
   private async uploadToAllPlatforms(videos: any[]) {
-    const platforms = ['youtube', 'tiktok', 'instagram'];
+    // For now, only upload to YouTube
+    const platforms = ['youtube'];
 
-    console.log(
-      `Uploading ${videos.length} videos to ${platforms.length} platforms...`
-    );
+    console.log(`Uploading ${videos.length} videos to YouTube only...`);
 
     for (const video of videos) {
       console.log(`Uploading video: ${video.title}`);

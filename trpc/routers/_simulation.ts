@@ -164,7 +164,7 @@ export const simulationRouter = createTRPCRouter({
     .input(
       z.object({
         videoIds: z.array(z.string()),
-        platforms: z.array(z.enum(['youtube', 'tiktok', 'instagram'])),
+        platforms: z.array(z.enum(['youtube'])).default(['youtube']), // YouTube only for now
       })
     )
     .mutation(async ({ input }) => {

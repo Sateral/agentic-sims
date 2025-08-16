@@ -27,7 +27,7 @@ export class VideoAnalyzer {
     Rate from 0-1 and suggest engaging title and description for YouTube Shorts.`;
 
     const response = await openai.chat.completions.create({
-      model: 'gpt-4-vision-preview',
+      model: 'gpt-5-nano',
       messages: [
         {
           role: 'user',

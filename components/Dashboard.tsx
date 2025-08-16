@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useTRPC } from '@/trpc/client';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Card,
   CardContent,
@@ -39,80 +41,126 @@ import {
   CheckCircle,
   AlertCircle,
   X,
+  RefreshCw,
+  Loader2,
 } from 'lucide-react';
 
-// Mock data - replace with actual tRPC calls
-const mockStats = {
-  totalVideos: 156,
-  totalUploads: 468,
-  todayUploads: 12,
-  avgViews: 15420,
-  totalViews: 7234567,
-  totalLikes: 523420,
-  platformStats: [
-    { platform: 'youtube', count: 156 },
-    { platform: 'tiktok', count: 156 },
-    { platform: 'instagram', count: 156 },
-  ],
-};
-
-const mockRecentUploads = [
-  {
-    id: '1',
-    platform: 'youtube',
-    url: 'https://youtube.com/watch?v=123',
-    status: 'published',
-    uploadedAt: new Date('2024-01-15T10:30:00Z'),
-    video: {
-      title: 'Mesmerizing Bouncing Balls Physics',
-      duration: 15,
-      simulation: { type: 'bouncing_balls' },
-    },
-    metrics: [{ views: 12500, likes: 890, comments: 45, shares: 23 }],
-  },
-  // Add more mock data...
-];
-
-const mockMetricsOverTime = [
-  { date: '2024-01-10', value: 15000 },
-  { date: '2024-01-11', value: 18000 },
-  { date: '2024-01-12', value: 22000 },
-  { date: '2024-01-13', value: 19000 },
-  { date: '2024-01-14', value: 25000 },
-  { date: '2024-01-15', value: 28000 },
-];
-
-const mockPlatformComparison = [
-  { platform: 'YouTube', avgViews: 18500, totalUploads: 156, color: '#FF0000' },
-  { platform: 'TikTok', avgViews: 24000, totalUploads: 156, color: '#000000' },
-  {
-    platform: 'Instagram',
-    avgViews: 12000,
-    totalUploads: 156,
-    color: '#E4405F',
-  },
-];
-
-const mockTopVideos = [
-  {
-    id: '1',
-    video: {
-      title: 'Hypnotic Particle Dance',
-      simulation: { type: 'particle_physics' },
-    },
-    platform: 'tiktok',
-    url: 'https://tiktok.com/@user/video/123',
-    metrics: [{ views: 125000, likes: 8900, comments: 456, shares: 234 }],
-  },
-  // Add more...
-];
-
-export default function Dashboard() {
+const Dashboard = () => {
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [selectedMetric, setSelectedMetric] = useState<
     'views' | 'likes' | 'comments' | 'shares'
   >('views');
-  const [selectedPlatform, setSelectedPlatform] = useState<string>('all');
+  const [selectedPlatform, setSelectedPlatform] = useState<string>('youtube');
   const [timeframe, setTimeframe] = useState<'day' | 'week' | 'month'>('week');
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [dailyLoading, setDailyLoading] = useState(false);
+
+  // tRPC hooks - using the useTRPC hook
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
+
+  // Queries - using the correct pattern
+  const { data: stats, refetch: refetchStats } = useQuery(
+    trpc.dashboard.getStats.queryOptions()
+  );
+  const { data: recentUploads, refetch: refetchUploads } = useQuery(
+    trpc.dashboard.getRecentUploads.queryOptions({ limit: 10 })
+  );
+  const { data: metricsOverTime, refetch: refetchMetrics } = useQuery(
+    trpc.dashboard.getMetricsOverTime.queryOptions({
+      days: timeframe === 'day' ? 1 : timeframe === 'week' ? 7 : 30,
+      platform: selectedPlatform === 'all' ? undefined : selectedPlatform,
+      metric: selectedMetric,
+    })
+  );
+  const { data: platformComparison, refetch: refetchPlatforms } = useQuery(
+    trpc.dashboard.getPlatformComparison.queryOptions()
+  );
+  const { data: topVideos, refetch: refetchTopVideos } = useQuery(
+    trpc.dashboard.getTopPerformingVideos.queryOptions({
+      limit: 5,
+      platform: selectedPlatform === 'all' ? undefined : selectedPlatform,
+      sortBy: selectedMetric,
+      timeframe:
+        timeframe === 'day' ? 'day' : timeframe === 'week' ? 'week' : 'month',
+    })
+  );
+  const { data: simulationTypes, refetch: refetchSimTypes } = useQuery(
+    trpc.dashboard.getSimulationTypePerformance.queryOptions()
+  );
+
+  // Mutations using standard React Query pattern
+  const syncMetrics = useMutation({
+    mutationFn: () =>
+      fetch('/api/trpc/simulation.syncMetrics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      }).then((r) => r.json()),
+    onSuccess: () => {
+      setSyncLoading(false);
+      setLastSyncTime(new Date());
+      queryClient.invalidateQueries();
+    },
+    onError: () => setSyncLoading(false),
+  });
+
+  const runDailyProcess = useMutation({
+    mutationFn: () =>
+      fetch('/api/trpc/simulation.runDailyProcess', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      }).then((r) => r.json()),
+    onSuccess: () => {
+      setDailyLoading(false);
+      queryClient.invalidateQueries();
+    },
+    onError: () => setDailyLoading(false),
+  });
+  const refreshAllData = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        refetchStats(),
+        refetchUploads(),
+        refetchMetrics(),
+        refetchPlatforms(),
+        refetchTopVideos(),
+        refetchSimTypes(),
+      ]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const handleSyncMetrics = () => {
+    syncMetrics.mutate();
+  };
+
+  const handleRunDailyProcess = () => {
+    runDailyProcess.mutate();
+  };
+
+  // Format platform data for charts (YouTube only for now)
+  const platformData =
+    platformComparison
+      ?.filter((p: any) => p.platform === 'youtube')
+      .map((platform: any) => ({
+        platform:
+          platform.platform.charAt(0).toUpperCase() +
+          platform.platform.slice(1),
+        avgViews: platform.avgViews,
+        totalUploads: platform.count,
+        color: '#FF0000', // YouTube red
+      })) || [];
+
+  // Format simulation type data for pie chart
+  const simulationTypeData =
+    simulationTypes?.map((type: any, index: number) => ({
+      name: type.type.replace('_', ' ').toUpperCase(),
+      value: type.videoCount || type.uploadCount || 0,
+      color: ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'][index % 5],
+    })) || [];
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -128,14 +176,35 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline">
-              <Upload className="w-4 h-4 mr-2" />
+            <Button
+              variant="outline"
+              onClick={handleSyncMetrics}
+              disabled={syncLoading || isRefreshing}
+            >
+              {syncLoading ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4 mr-2" />
+              )}
               Sync Metrics
             </Button>
-            <Button>
-              <Play className="w-4 h-4 mr-2" />
+            <Button
+              onClick={handleRunDailyProcess}
+              disabled={dailyLoading || isRefreshing}
+            >
+              {dailyLoading ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Play className="w-4 h-4 mr-2" />
+              )}
               Run Daily Process
             </Button>
+            <Button className="hover:pointer">Test</Button>
+            {lastSyncTime && (
+              <p className="text-xs text-gray-500 self-center">
+                Last sync: {lastSyncTime.toLocaleTimeString()}
+              </p>
+            )}
           </div>
         </div>
 
@@ -149,7 +218,9 @@ export default function Dashboard() {
               <Play className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{mockStats.totalVideos}</div>
+              <div className="text-2xl font-bold">
+                {stats?.totalVideos || 0}
+              </div>
               <p className="text-xs text-muted-foreground">
                 Generated simulations
               </p>
@@ -164,7 +235,9 @@ export default function Dashboard() {
               <Upload className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{mockStats.totalUploads}</div>
+              <div className="text-2xl font-bold">
+                {stats?.totalUploads || 0}
+              </div>
               <p className="text-xs text-muted-foreground">
                 Across all platforms
               </p>
@@ -179,7 +252,9 @@ export default function Dashboard() {
               <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{mockStats.todayUploads}</div>
+              <div className="text-2xl font-bold">
+                {stats?.todayUploads || 0}
+              </div>
               <p className="text-xs text-muted-foreground">
                 +20% from yesterday
               </p>
@@ -193,7 +268,7 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {mockStats.totalViews.toLocaleString()}
+                {stats?.totalViews?.toLocaleString() || '0'}
               </div>
               <p className="text-xs text-muted-foreground">All time</p>
             </CardContent>
@@ -206,7 +281,7 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {mockStats.totalLikes.toLocaleString()}
+                {stats?.totalLikes?.toLocaleString() || '0'}
               </div>
               <p className="text-xs text-muted-foreground">All time</p>
             </CardContent>
@@ -219,7 +294,7 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {mockStats.avgViews.toLocaleString()}
+                {stats?.avgViews?.toLocaleString() || '0'}
               </div>
               <p className="text-xs text-muted-foreground">Per video</p>
             </CardContent>
@@ -274,7 +349,7 @@ export default function Dashboard() {
                 </CardHeader>
                 <CardContent>
                   <ResponsiveContainer width="100%" height={300}>
-                    <LineChart data={mockMetricsOverTime}>
+                    <LineChart data={metricsOverTime || []}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="date" />
                       <YAxis />
@@ -303,7 +378,7 @@ export default function Dashboard() {
                 </CardHeader>
                 <CardContent>
                   <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={mockPlatformComparison}>
+                    <BarChart data={platformData}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="platform" />
                       <YAxis />
@@ -324,7 +399,7 @@ export default function Dashboard() {
                   <ResponsiveContainer width="100%" height={300}>
                     <PieChart>
                       <Pie
-                        data={mockPlatformComparison}
+                        data={simulationTypeData}
                         cx="50%"
                         cy="50%"
                         labelLine={false}
@@ -335,7 +410,7 @@ export default function Dashboard() {
                         fill="#8884d8"
                         dataKey="totalUploads"
                       >
-                        {mockPlatformComparison.map((entry, index) => (
+                        {simulationTypeData.map((entry: any, index: number) => (
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
@@ -359,7 +434,7 @@ export default function Dashboard() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {mockRecentUploads.map((upload) => (
+                    {recentUploads?.map((upload: any) => (
                       <div
                         key={upload.id}
                         className="flex items-center justify-between p-4 border rounded-lg"
@@ -441,7 +516,7 @@ export default function Dashboard() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {mockTopVideos.map((video, index) => (
+                    {topVideos?.map((video: any, index: number) => (
                       <div key={video.id} className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-sm font-medium">
                           {index + 1}
@@ -618,13 +693,20 @@ export default function Dashboard() {
                       </div>
                       <div>
                         <div className="font-medium">YouTube</div>
-                        <div className="text-sm text-gray-500">Connected</div>
+                        <div className="text-sm text-gray-500">
+                          OAuth Setup Required
+                        </div>
                       </div>
                     </div>
-                    <Badge variant="default">
-                      <CheckCircle className="w-3 h-3 mr-1" />
-                      Active
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary">
+                        <AlertCircle className="w-3 h-3 mr-1" />
+                        Setup
+                      </Badge>
+                      <Button size="sm" asChild>
+                        <a href="/auth/youtube/setup">Configure</a>
+                      </Button>
+                    </div>
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -633,12 +715,14 @@ export default function Dashboard() {
                       </div>
                       <div>
                         <div className="font-medium">TikTok</div>
-                        <div className="text-sm text-gray-500">Connected</div>
+                        <div className="text-sm text-gray-500">
+                          Disabled for testing
+                        </div>
                       </div>
                     </div>
-                    <Badge variant="secondary">
-                      <AlertCircle className="w-3 h-3 mr-1" />
-                      Limited
+                    <Badge variant="outline">
+                      <X className="w-3 h-3 mr-1" />
+                      Disabled
                     </Badge>
                   </div>
                   <div className="flex items-center justify-between">
@@ -648,12 +732,14 @@ export default function Dashboard() {
                       </div>
                       <div>
                         <div className="font-medium">Instagram</div>
-                        <div className="text-sm text-gray-500">Connected</div>
+                        <div className="text-sm text-gray-500">
+                          Disabled for testing
+                        </div>
                       </div>
                     </div>
-                    <Badge variant="default">
-                      <CheckCircle className="w-3 h-3 mr-1" />
-                      Active
+                    <Badge variant="outline">
+                      <X className="w-3 h-3 mr-1" />
+                      Disabled
                     </Badge>
                   </div>
                 </CardContent>
@@ -664,4 +750,6 @@ export default function Dashboard() {
       </div>
     </div>
   );
-}
+};
+
+export default Dashboard;

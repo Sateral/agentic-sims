@@ -142,7 +142,7 @@ FPS = ${params.fps}
 DURATION = ${params.duration}
 
 # Colors
-BACKGROUND = ${params.backgroundColor || '#000000'}
+BACKGROUND = '${params.backgroundColor || '#000000'}'
 BALL_COLORS = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
 
 class Ball:
@@ -407,11 +407,18 @@ out.release()
   }
 
   /**
-   * Run Python script
+   * Run Python script using virtual environment
    */
   private async runPythonScript(script: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const python = spawn('python3', ['-c', script]);
+      // Use the virtual environment Python executable
+      const pythonPath =
+        '/home/danielkop/Projects/agentic-sims/venv/bin/python';
+      const python = spawn(pythonPath, ['-c', script]);
+
+      python.stdout.on('data', (data) => {
+        console.log(`Python output: ${data}`);
+      });
 
       python.stderr.on('data', (data) => {
         console.error(`Python error: ${data}`);

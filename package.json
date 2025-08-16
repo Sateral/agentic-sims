@@ -12,7 +12,9 @@
     "prisma:reset": "prisma migrate reset",
     "prisma:seed": "tsx prisma/seed.ts",
     "prisma:studio": "prisma studio",
-    "setup": "chmod +x setup.sh && ./setup.sh"
+    "setup": "chmod +x setup.sh && ./setup.sh",
+    "test:video": "tsx scripts/testVideoGeneration.ts",
+    "setup:youtube": "tsx scripts/setupYouTubeOAuth.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
