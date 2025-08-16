@@ -1,45 +1,58 @@
 import { VideoAnalyzer } from './analyzeSimulation';
-import { YouTubeService } from '../platforms/youtubeIntegration';
+import { PlatformServiceFactory } from '../platforms/platformServices';
+import { VideoGenerator } from '../video/videoGenerator';
 import { prisma } from '@/lib/prisma';
+import path from 'path';
 
 export class UploadAgent {
   private videoAnalyzer = new VideoAnalyzer();
-  private youtubeService = new YouTubeService();
+  private videoGenerator = new VideoGenerator();
 
   async processDailyUploads() {
     console.log('Starting daily upload process...');
 
-    // 1. Generate new simulations if needed
-    await this.generateSimulations();
+    try {
+      // 1. Generate new simulations if needed
+      await this.generateSimulations();
 
-    // 2. Analyze and select best videos
-    const selectedVideos = await this.selectBestVideos();
+      // 2. Analyze and select best videos
+      const selectedVideos = await this.selectBestVideos();
 
-    // 3. Upload to platforms
-    await this.uploadToAllPlatforms(selectedVideos);
+      // 3. Upload to platforms
+      await this.uploadToAllPlatforms(selectedVideos);
 
-    console.log('Daily upload process completed');
+      console.log('Daily upload process completed successfully');
+    } catch (error) {
+      console.error('Daily upload process failed:', error);
+      throw error;
+    }
   }
 
   private async generateSimulations() {
-    // This would trigger your external simulation generation
-    // Could be Python scripts, C++ executables, etc.
+    console.log('Generating new simulations...');
+
     const simulationTypes = [
       'bouncing_balls',
       'particle_physics',
       'fluid_dynamics',
+      'gravity_sim',
     ];
 
-    /////* TODO: CREATE SIMULATION VARIATIONS */////
-    // for (const type of simulationTypes) {
-    //   for (let i = 0; i < 5; i++) {
-    //     // Generate 5 variations per type
-    //     await this.createSimulation(type);
-    //   }
-    // }
+    // Generate 5 variations per type
+    for (const type of simulationTypes) {
+      try {
+        console.log(`Generating ${type} simulations...`);
+        await this.videoGenerator.generateVariations(type, 5);
+        console.log(`✓ Generated ${type} simulations`);
+      } catch (error) {
+        console.error(`Failed to generate ${type} simulations:`, error);
+      }
+    }
   }
 
   private async selectBestVideos() {
+    console.log('Analyzing and selecting best videos...');
+
     // Get all videos from today that haven't been uploaded
     const videos = await prisma.video.findMany({
       where: {
@@ -47,43 +60,238 @@ export class UploadAgent {
         createdAt: {
           gte: new Date(new Date().setHours(0, 0, 0, 0)),
         },
+        uploads: {
+          none: {}, // No uploads yet
+        },
       },
       include: {
         simulation: true,
       },
     });
 
+    console.log(`Found ${videos.length} videos to analyze`);
+
     // Analyze each video
     const analyzedVideos = await Promise.all(
       videos.map(async (video) => {
-        const analysis = await this.videoAnalyzer.analyzeVideo(
-          `/tmp/videos/${video.id}.mp4`,
-          video.simulation.type
-        );
+        try {
+          const videoPath = path.join('/tmp/videos', `${video.id}.mp4`);
+          const analysis = await this.videoAnalyzer.analyzeVideo(
+            videoPath,
+            video.simulation.type
+          );
 
-        await prisma.video.update({
-          where: { id: video.id },
-          data: { aiScore: analysis.score },
-        });
+          // Update video with AI score and suggested content
+          await prisma.video.update({
+            where: { id: video.id },
+            data: {
+              aiScore: analysis.score,
+              title: analysis.suggestedTitle,
+              description: analysis.suggestedDescription,
+            },
+          });
 
-        return { ...video, analysis };
+          return { ...video, analysis };
+        } catch (error) {
+          console.error(`Failed to analyze video ${video.id}:`, error);
+          return null;
+        }
       })
     );
 
-    // Select top 3
-    return analyzedVideos
-      .sort((a, b) => b.analysis.score - a.analysis.score)
+    // Filter out failed analyses and select top videos
+    const validVideos = analyzedVideos.filter((v) => v !== null);
+    const topVideos = validVideos
+      .sort((a, b) => (b?.analysis.score || 0) - (a?.analysis.score || 0))
       .slice(0, 3);
+
+    console.log(`Selected ${topVideos.length} top videos for upload`);
+    return topVideos;
   }
 
   private async uploadToAllPlatforms(videos: any[]) {
     const platforms = ['youtube', 'tiktok', 'instagram'];
 
-    /////* TODO: UPLOAD VIDEOS TO ALL PLATFORMS */////
-    // for (const video of videos) {
-    //   for (const platform of platforms) {
-    //     await this.uploadToPlatform(video, platform);
-    //   }
-    // }
+    console.log(
+      `Uploading ${videos.length} videos to ${platforms.length} platforms...`
+    );
+
+    for (const video of videos) {
+      console.log(`Uploading video: ${video.title}`);
+
+      for (const platform of platforms) {
+        try {
+          await this.uploadToPlatform(video, platform);
+          console.log(`✓ Uploaded ${video.title} to ${platform}`);
+        } catch (error) {
+          console.error(
+            `Failed to upload ${video.title} to ${platform}:`,
+            error
+          );
+        }
+      }
+
+      // Mark video as selected for upload
+      await prisma.video.update({
+        where: { id: video.id },
+        data: { status: 'selected' },
+      });
+    }
+  }
+
+  private async uploadToPlatform(video: any, platform: string) {
+    const platformService = PlatformServiceFactory.createService(platform);
+    const videoPath = path.join('/tmp/videos', `${video.id}.mp4`);
+
+    // Prepare tags based on simulation type
+    const tags = this.generateTags(video.simulation.type);
+
+    // Upload video
+    const result = await platformService.uploadVideo(
+      videoPath,
+      video.title,
+      video.description,
+      tags
+    );
+
+    if (result.status === 'success') {
+      // Create upload record
+      await prisma.upload.create({
+        data: {
+          videoId: video.id,
+          platform,
+          platformId: result.platformId,
+          url: result.url,
+          status: 'published',
+        },
+      });
+
+      console.log(`Successfully uploaded to ${platform}: ${result.url}`);
+    } else {
+      console.error(`Upload to ${platform} failed:`, result.error);
+
+      // Create failed upload record
+      await prisma.upload.create({
+        data: {
+          videoId: video.id,
+          platform,
+          platformId: '',
+          url: '',
+          status: 'failed',
+        },
+      });
+
+      throw new Error(result.error || 'Upload failed');
+    }
+  }
+
+  private generateTags(simulationType: string): string[] {
+    const baseTags = ['physics', 'simulation', 'satisfying', 'science'];
+
+    const typeSpecificTags: Record<string, string[]> = {
+      bouncing_balls: ['balls', 'bounce', 'gravity', 'motion'],
+      particle_physics: ['particles', 'physics', 'energy', 'quantum'],
+      fluid_dynamics: ['fluid', 'flow', 'dynamics', 'water'],
+      gravity_sim: ['gravity', 'space', 'planets', 'orbital'],
+    };
+
+    return [...baseTags, ...(typeSpecificTags[simulationType] || [])];
+  }
+
+  /**
+   * Sync metrics for all uploaded videos
+   */
+  async syncMetrics() {
+    console.log('Syncing metrics for all uploads...');
+
+    const uploads = await prisma.upload.findMany({
+      where: {
+        status: 'published',
+      },
+    });
+
+    for (const upload of uploads) {
+      try {
+        const platformService = PlatformServiceFactory.createService(
+          upload.platform
+        );
+        const metrics = await platformService.getVideoMetrics(
+          upload.platformId
+        );
+
+        // Update or create metrics record
+        const existingMetric = await prisma.metric.findFirst({
+          where: { uploadId: upload.id },
+        });
+
+        if (existingMetric) {
+          await prisma.metric.update({
+            where: { id: existingMetric.id },
+            data: {
+              views: metrics.views,
+              likes: metrics.likes,
+              comments: metrics.comments,
+              shares: metrics.shares,
+            },
+          });
+        } else {
+          await prisma.metric.create({
+            data: {
+              uploadId: upload.id,
+              views: metrics.views,
+              likes: metrics.likes,
+              comments: metrics.comments,
+              shares: metrics.shares,
+            },
+          });
+        }
+      } catch (error) {
+        console.error(`Failed to sync metrics for upload ${upload.id}:`, error);
+      }
+    }
+
+    console.log('Metrics sync completed');
+  }
+
+  /**
+   * Clean up old videos and data
+   */
+  async cleanup() {
+    console.log('Starting cleanup process...');
+
+    const fs = require('fs').promises;
+    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    // Delete old video files (videos are not stored permanently)
+    try {
+      const videoDir = '/tmp/videos';
+      const files = await fs.readdir(videoDir);
+
+      for (const file of files) {
+        const filePath = path.join(videoDir, file);
+        const stats = await fs.stat(filePath);
+
+        if (stats.mtime < oneWeekAgo) {
+          await fs.unlink(filePath);
+          console.log(`Deleted old video file: ${file}`);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to clean up video files:', error);
+    }
+
+    // Archive old simulation data (keep for analytics)
+    const oldSimulations = await prisma.simulation.findMany({
+      where: {
+        createdAt: {
+          lt: oneWeekAgo,
+        },
+        status: 'completed',
+      },
+    });
+
+    console.log(`Found ${oldSimulations.length} old simulations for archival`);
+
+    console.log('Cleanup completed');
   }
 }
