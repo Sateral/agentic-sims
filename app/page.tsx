@@ -1,21 +1,11 @@
 import React, { Suspense } from 'react';
-
-import { dehydrate, HydrationBoundary } from '@tanstack/react-query';
-
-import { getQueryClient, trpc } from '@/trpc/server';
-
-import { Client } from './client';
+import Dashboard from '@/components/Dashboard';
 
 const Page = async () => {
-  const queryClient = getQueryClient();
-  void queryClient.prefetchQuery(trpc.hello.queryOptions({ text: 'PREFETCH' }));
-
   return (
-    <HydrationBoundary state={dehydrate(queryClient)}>
-      <Suspense fallback={<div>Loading...</div>}>
-        <Client />
-      </Suspense>
-    </HydrationBoundary>
+    <Suspense fallback={<div>Loading...</div>}>
+      <Dashboard />
+    </Suspense>
   );
 };
 
