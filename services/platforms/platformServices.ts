@@ -258,13 +258,29 @@ export class InstagramService extends BasePlatformService {
 // Updated YouTube service
 export class YouTubeService extends BasePlatformService {
   private youtube;
+  private oauth2Client;
 
   constructor() {
     super();
     const { google } = require('googleapis');
+
+    // Set up OAuth2 client for uploads (API key is read-only)
+    this.oauth2Client = new google.auth.OAuth2(
+      process.env.YOUTUBE_CLIENT_ID,
+      process.env.YOUTUBE_CLIENT_SECRET,
+      process.env.YOUTUBE_REDIRECT_URI
+    );
+
+    // Set credentials if we have them
+    if (process.env.YOUTUBE_REFRESH_TOKEN) {
+      this.oauth2Client.setCredentials({
+        refresh_token: process.env.YOUTUBE_REFRESH_TOKEN,
+      });
+    }
+
     this.youtube = google.youtube({
       version: 'v3',
-      auth: process.env.YOUTUBE_API_KEY,
+      auth: this.oauth2Client,
     });
   }
 
@@ -283,11 +299,12 @@ export class YouTubeService extends BasePlatformService {
           snippet: {
             title,
             description,
-            tags: [...tags, 'simulation', 'physics', 'satisfying'],
+            tags: [...tags, 'simulation', 'physics', 'satisfying', 'shorts'],
             categoryId: '28', // Science & Technology
           },
           status: {
             privacyStatus: 'public',
+            selfDeclaredMadeForKids: false,
           },
         },
         media: {
@@ -305,6 +322,7 @@ export class YouTubeService extends BasePlatformService {
         throw new Error('Upload response missing video ID');
       }
     } catch (error) {
+      console.error('YouTube upload error:', error);
       return {
         platformId: '',
         url: '',
@@ -316,7 +334,14 @@ export class YouTubeService extends BasePlatformService {
 
   async getVideoMetrics(platformId: string): Promise<VideoMetrics> {
     try {
-      const response = await this.youtube.videos.list({
+      // For metrics, we can use a separate client with API key
+      const { google } = require('googleapis');
+      const youtubeReadOnly = google.youtube({
+        version: 'v3',
+        auth: process.env.YOUTUBE_API_KEY,
+      });
+
+      const response = await youtubeReadOnly.videos.list({
         part: ['statistics'],
         id: [platformId],
       });
