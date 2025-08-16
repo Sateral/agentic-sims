@@ -1,0 +1,12 @@
+# Python dependencies for video generation
+pygame==2.6.1
+opencv-python==4.10.0.84
+numpy==2.0.2
+scipy==1.14.1
+matplotlib==3.9.2
+pillow==10.4.0
+ffmpeg-python==0.2.0
+
+# For advanced simulations (optional)
+moderngl==5.12.0
+pyrr==0.10.3
