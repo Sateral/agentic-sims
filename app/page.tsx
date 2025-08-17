@@ -1,5 +1,5 @@
 import React, { Suspense } from 'react';
-import Dashboard from '@/components/Dashboard';
+import Dashboard from '@/components/Dashboard/Dashboard';
 
 const Page = async () => {
   return (
