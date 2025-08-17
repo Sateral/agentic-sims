@@ -34,6 +34,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import useQueryStore from '@/stores/query-store';
+import {
+  ChartConfig,
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from '@/components/ui/chart';
 
 type RouterOutput = inferRouterOutputs<AppRouter>;
 type MetricsOverTimeOutput = RouterOutput['dashboard']['getMetricsOverTime'];
@@ -73,6 +79,20 @@ const MetricsOverTime = ({
       value: type.videoCount || type.uploadCount || 0,
       color: ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'][index % 5],
     })) || [];
+
+  const lineChartConfig = {
+    value: {
+      label: selectedMetric.toUpperCase(),
+      color: 'var(--chart-1)',
+    },
+  } satisfies ChartConfig;
+
+  const barChartConfig = {
+    avgViews: {
+      label: 'Average Views',
+      color: 'var(--chart-1)',
+    },
+  } satisfies ChartConfig;
 
   return (
     <>
@@ -117,17 +137,27 @@ const MetricsOverTime = ({
           </div>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={metricsOverTime || []}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="date" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
+          <ChartContainer config={lineChartConfig}>
+            <LineChart
+              accessibilityLayer
+              data={metricsOverTime || []}
+              margin={{ left: 12, right: 12 }}
+            >
+              <CartesianGrid vertical={false} />
+              <XAxis
+                dataKey="date"
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+              />
+              <ChartTooltip
+                cursor={false}
+                content={<ChartTooltipContent indicator="line" />}
+              />
+              {/* <Legend /> */}
               <Line
                 type="monotone"
                 dataKey="value"
-                stroke="#8884d8"
                 strokeWidth={2}
                 name={
                   selectedMetric.charAt(0).toUpperCase() +
@@ -135,7 +165,7 @@ const MetricsOverTime = ({
                 }
               />
             </LineChart>
-          </ResponsiveContainer>
+          </ChartContainer>
         </CardContent>
       </Card>
 
@@ -146,15 +176,23 @@ const MetricsOverTime = ({
           <CardDescription>Average views by platform</CardDescription>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={platformData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="platform" />
+          <ChartContainer config={barChartConfig}>
+            <BarChart accessibilityLayer data={platformData}>
+              <CartesianGrid vertical={false} />
+              <XAxis
+                dataKey="platform"
+                tickLine={false}
+                axisLine={false}
+                tickMargin={10}
+              />
               <YAxis />
-              <Tooltip />
-              <Bar dataKey="avgViews" fill="#8884d8" />
+              <ChartTooltip
+                cursor={false}
+                content={<ChartTooltipContent hideLabel />}
+              />
+              <Bar dataKey="avgViews" fill="var(--youtube-bar)" radius={8} />
             </BarChart>
-          </ResponsiveContainer>
+          </ChartContainer>
         </CardContent>
       </Card>
 
