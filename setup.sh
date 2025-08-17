@@ -5,9 +5,15 @@
 echo "Setting up AI Video Generation System..."
 
 # Create Python virtual environment
-echo "Creating Python virtual environment..."
-python3 -m venv venv
-source venv/bin/activate
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+  echo "Windows detected..."
+  python -m venv venv
+  source venv/Scripts/activate
+else
+  echo "Unix detected..."
+  python3 -m venv venv
+  source venv/bin/activate
+fi
 
 # Install Python dependencies
 echo "Installing Python dependencies..."

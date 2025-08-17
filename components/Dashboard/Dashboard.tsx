@@ -47,15 +47,12 @@ import {
 import Header from './Header';
 import StatsOverview from './StatsOverview';
 import MainTabs from './MainTabs';
+import useQueryStore from '@/stores/query-store';
 
 const Dashboard = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
-  const [selectedMetric, setSelectedMetric] = useState<
-    'views' | 'likes' | 'comments' | 'shares'
-  >('views');
-  const [selectedPlatform, setSelectedPlatform] = useState<string>('youtube');
-  const [timeframe, setTimeframe] = useState<'day' | 'week' | 'month'>('week');
+  const { selectedMetric, timeframe, selectedPlatform } = useQueryStore();
   const [syncLoading, setSyncLoading] = useState(false);
   const [dailyLoading, setDailyLoading] = useState(false);
 
@@ -120,6 +117,7 @@ const Dashboard = () => {
     },
     onError: () => setDailyLoading(false),
   });
+
   const refreshAllData = async () => {
     setIsRefreshing(true);
     try {
@@ -144,29 +142,8 @@ const Dashboard = () => {
     runDailyProcess.mutate();
   };
 
-  // Format platform data for charts (YouTube only for now)
-  const platformData =
-    platformComparison
-      ?.filter((p: any) => p.platform === 'youtube')
-      .map((platform: any) => ({
-        platform:
-          platform.platform.charAt(0).toUpperCase() +
-          platform.platform.slice(1),
-        avgViews: platform.avgViews,
-        totalUploads: platform.count,
-        color: '#FF0000', // YouTube red
-      })) || [];
-
-  // Format simulation type data for pie chart
-  const simulationTypeData =
-    simulationTypes?.map((type: any, index: number) => ({
-      name: type.type.replace('_', ' ').toUpperCase(),
-      value: type.videoCount || type.uploadCount || 0,
-      color: ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'][index % 5],
-    })) || [];
-
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-background">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
         <Header
