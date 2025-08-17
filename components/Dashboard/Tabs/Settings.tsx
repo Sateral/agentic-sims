@@ -1,4 +1,7 @@
+'use client';
+
 import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 
 import { Badge } from '@/components/ui/badge';
 import {
@@ -8,10 +11,29 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { AlertCircle, CheckCircle, X } from 'lucide-react';
+import { AlertCircle, CheckCircle, X, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useTRPC } from '@/trpc/client';
 
 const Settings = () => {
+  const trpc = useTRPC();
+
+  const {
+    data: youtubeStatus,
+    isLoading,
+    refetch: checkConnection,
+    isFetching,
+  } = useQuery(trpc.youtube.status.queryOptions());
+
+  const youtubeConnection = youtubeStatus || {
+    connected: false,
+    reason: 'Loading...',
+  };
+
+  function refreshStatus() {
+    checkConnection();
+  }
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <Card>
@@ -73,17 +95,52 @@ const Settings = () => {
               <div>
                 <div className="font-medium">YouTube</div>
                 <div className="text-sm text-gray-500">
-                  OAuth Setup Required
+                  {youtubeConnection.connected
+                    ? 'API Connected'
+                    : youtubeConnection.reason || 'OAuth Setup Required'}
                 </div>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant="secondary">
-                <AlertCircle className="w-3 h-3 mr-1" />
-                Setup
-              </Badge>
-              <Button size="sm" asChild>
-                <a href="/auth/youtube/setup">Configure</a>
+              {isLoading || isFetching ? (
+                <Badge variant="secondary">
+                  <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
+                  Checking...
+                </Badge>
+              ) : youtubeConnection.connected ? (
+                <div className="flex items-center gap-2">
+                  <Badge variant="default">
+                    <CheckCircle className="w-3 h-3 mr-1" />
+                    Connected
+                  </Badge>
+                  {/* {youtubeConnection.channelId && (
+                    <div className="text-xs text-gray-500">
+                      ID: {youtubeConnection.channelId.substring(0, 8)}...
+                    </div>
+                  )} */}
+                </div>
+              ) : (
+                <>
+                  <Badge variant="destructive">
+                    <AlertCircle className="w-3 h-3 mr-1" />
+                    Disconnected
+                  </Badge>
+                  <Button size="sm" asChild>
+                    <a href="/auth/youtube/setup">Configure</a>
+                  </Button>
+                </>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => checkConnection()}
+                disabled={isLoading || isFetching}
+              >
+                <RefreshCw
+                  className={`w-3 h-3 ${
+                    isLoading || isFetching ? 'animate-spin' : ''
+                  }`}
+                />
               </Button>
             </div>
           </div>

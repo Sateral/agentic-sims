@@ -5,7 +5,7 @@ export class YouTubeService {
   private oauth2Client;
 
   constructor() {
-    // Set up OAuth2 client for uploads (API key is read-only)
+    // Set up OAuth2 client for uploads
     this.oauth2Client = new google.auth.OAuth2(
       process.env.YOUTUBE_CLIENT_ID,
       process.env.YOUTUBE_CLIENT_SECRET,
@@ -78,6 +78,7 @@ export class YouTubeService {
 
     return this.oauth2Client.generateAuthUrl({
       access_type: 'offline',
+      prompt: 'consent',
       scope: scopes,
     });
   }

@@ -74,6 +74,66 @@ export class YouTubeOAuthHelper {
       throw error;
     }
   }
+
+  async verifyConnection() {
+    const client_id = process.env.YOUTUBE_CLIENT_ID;
+    const client_secret = process.env.YOUTUBE_CLIENT_SECRET;
+    const refresh_token = process.env.YOUTUBE_REFRESH_TOKEN;
+
+    if (!client_id || !client_secret || !refresh_token) {
+      console.error('❌ Missing required environment variables:');
+      if (!client_id) console.error('   - YOUTUBE_CLIENT_ID');
+      if (!client_secret) console.error('   - YOUTUBE_CLIENT_SECRET');
+      if (!refresh_token) console.error('   - YOUTUBE_REFRESH_TOKEN');
+      return { connected: false, reason: 'Missing OAuth configuration' };
+    }
+
+    try {
+      // Create properly formatted URL-encoded body
+      const body = new URLSearchParams({
+        client_id,
+        client_secret,
+        refresh_token,
+        grant_type: 'refresh_token',
+      });
+
+      const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+      });
+
+      if (!tokenRes.ok) {
+        const msg = await tokenRes.text();
+        return { connected: false, reason: `Refresh failed: ${msg}` };
+      }
+
+      const { access_token } = (await tokenRes.json()) as {
+        access_token: string;
+      };
+
+      const ytRes = await fetch(
+        'https://www.googleapis.com/youtube/v3/channels?part=id&mine=true',
+        { headers: { Authorization: `Bearer ${access_token}` } }
+      );
+
+      if (!ytRes.ok) {
+        const msg = await ytRes.text();
+        return { connected: false, reason: `YouTube check failed: ${msg}` };
+      }
+
+      const data = (await ytRes.json()) as { items?: Array<{ id: string }> };
+      const channelId = data.items?.[0]?.id;
+
+      return { connected: true, channelId };
+    } catch (error) {
+      console.error('❌ YouTube verification error:', error);
+      return {
+        connected: false,
+        reason: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  }
 }
 
 // Example usage for testing
