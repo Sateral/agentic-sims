@@ -83,6 +83,32 @@ export class YouTubeService {
     });
   }
 
+  async verifyConnection(): Promise<{
+    connected: boolean;
+    channelId?: string;
+  }> {
+    const { data } = await this.youtube.channels.list({
+      part: ['id'],
+      mine: true,
+    });
+    if (!data) {
+      throw new Error('Failed to retrieve YouTube channel data');
+      return { connected: false, channelId: undefined };
+    }
+
+    if (data.items?.length === 0 || data.items === undefined) {
+      throw new Error('No YouTube channel found');
+    }
+
+    if (data.items[0].id === undefined || data.items[0].id === null) {
+      throw new Error('Channel ID is undefined');
+    }
+
+    const channelId = data.items[0].id;
+
+    return { connected: true, channelId: channelId };
+  }
+
   /**
    * Exchange auth code for tokens
    */

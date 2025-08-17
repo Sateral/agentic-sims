@@ -1,27 +1,63 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 import { Loader2, Play, RefreshCw } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { ModeToggle } from '@/components/ModeToggle';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
-interface HeaderProps {
-  handleSyncMetrics: () => void;
-  handleRunDailyProcess: () => void;
-  syncLoading: boolean;
-  dailyLoading: boolean;
-  lastSyncTime: Date | null;
-  isRefreshing: boolean;
-}
+const Header = () => {
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [dailyLoading, setDailyLoading] = useState(false);
 
-const Header: React.FC<HeaderProps> = ({
-  handleSyncMetrics,
-  handleRunDailyProcess,
-  syncLoading,
-  dailyLoading,
-  lastSyncTime,
-  isRefreshing,
-}) => {
+  const queryClient = useQueryClient();
+
+  const syncMetrics = useMutation({
+    mutationFn: () =>
+      fetch('/api/trpc/simulation.syncMetrics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      }).then((r) => r.json()),
+    onSuccess: () => {
+      setSyncLoading(false);
+      setLastSyncTime(new Date());
+      queryClient.invalidateQueries();
+    },
+    onError: () => setSyncLoading(false),
+  });
+
+  const runDailyProcess = useMutation({
+    mutationFn: () =>
+      fetch('/api/trpc/simulation.runDailyProcess', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      }).then((r) => r.json()),
+    onSuccess: () => {
+      setDailyLoading(false);
+      queryClient.invalidateQueries();
+    },
+    onError: () => setDailyLoading(false),
+  });
+
+  const handleSyncMetrics = () => {
+    setSyncLoading(true);
+    setIsRefreshing(true);
+    try {
+      syncMetrics.mutate();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setSyncLoading(false);
+      setIsRefreshing(false);
+    }
+  };
+
+  const handleRunDailyProcess = () => {
+    runDailyProcess.mutate();
+  };
+
   return (
     <div className="flex justify-between items-center">
       <div>
