@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Card,
   CardContent,
@@ -12,37 +12,64 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { CheckCircle, ExternalLink, Copy, AlertCircle } from 'lucide-react';
+import { useTRPC } from '@/trpc/client';
+import { useMutation, useQuery } from '@tanstack/react-query';
 
 export default function YouTubeOAuthSetup() {
   const [step, setStep] = useState(1);
   const [oauthUrl, setOauthUrl] = useState('');
   const [loading, setLoading] = useState(false);
+  const [refreshToken, setRefreshToken] = useState('');
+  const [error, setError] = useState('');
+
+  const trpc = useTRPC();
+  const {
+    data: authUrl,
+    isLoading,
+    refetch,
+  } = useQuery(trpc.youtube.getAuthUrl.queryOptions());
+
+  // Mutation for exchanging code for refresh token - use tRPC mutation
+  const { mutate: exchangeCodeMutation, isPending } = useMutation({
+    ...trpc.youtube.exchangeCode.mutationOptions({
+      onSuccess: (data) => {
+        setRefreshToken(data);
+        setStep(3);
+      },
+      onError: (err) => {
+        setError(`Error: ${err.message}`);
+      },
+    }),
+  });
+
+  // Check for OAuth code in URL on component mount
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    const errorParam = urlParams.get('error');
+
+    if (errorParam) {
+      setError(`OAuth error: ${errorParam}`);
+      // Clear URL parameters
+      window.history.replaceState({}, document.title, window.location.pathname);
+      return;
+    }
+
+    if (code) {
+      // We have a code, exchange it for tokens
+      setStep(2); // Show that we're processing
+      exchangeCodeMutation({ code });
+    }
+  }, [exchangeCodeMutation]);
 
   const generateOAuthUrl = async () => {
     setLoading(true);
     try {
-      // Create the OAuth URL directly (since we have the client ID)
-      const clientId =
-        process.env.NEXT_PUBLIC_YOUTUBE_CLIENT_ID ||
-        '186919940991-29afum3a738j14putojjibsnsb4o51jg.apps.googleusercontent.com';
-      const redirectUri = encodeURIComponent(
-        'http://localhost:3000/auth/youtube/callback'
-      );
-      const scope = encodeURIComponent(
-        'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly'
-      );
-
-      const url =
-        `https://accounts.google.com/o/oauth2/v2/auth?` +
-        `client_id=${clientId}&` +
-        `redirect_uri=${redirectUri}&` +
-        `scope=${scope}&` +
-        `response_type=code&` +
-        `access_type=offline&` +
-        `prompt=consent`;
-
-      setOauthUrl(url);
-      setStep(2);
+      const { data } = await refetch();
+      if (data) {
+        setOauthUrl(data);
+        setStep(2);
+      }
     } catch (error) {
       console.error('Failed to generate OAuth URL:', error);
     } finally {
@@ -55,18 +82,25 @@ export default function YouTubeOAuthSetup() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-background p-6">
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="text-center">
           <h1 className="text-3xl font-bold">YouTube OAuth Setup</h1>
-          <p className="text-gray-600 mt-2">
+          <p className="mt-2">
             Set up YouTube authentication for video uploads
           </p>
         </div>
 
+        {error && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Step 1 */}
-          <Card className={step >= 1 ? 'border-blue-200 bg-blue-50' : ''}>
+          <Card className={step >= 1 ? '' : ''}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 {step > 1 ? (
@@ -92,9 +126,7 @@ export default function YouTubeOAuthSetup() {
           </Card>
 
           {/* Step 2 */}
-          <Card
-            className={step >= 2 ? 'border-blue-200 bg-blue-50' : 'opacity-50'}
-          >
+          <Card className={step >= 2 ? '' : 'opacity-50'}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 {step > 2 ? (
@@ -107,21 +139,30 @@ export default function YouTubeOAuthSetup() {
                 Authorize YouTube
               </CardTitle>
               <CardDescription>
-                Grant permissions to your YouTube channel
+                {isPending
+                  ? 'Processing authorization...'
+                  : 'Grant permissions to your YouTube channel'}
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {oauthUrl && (
+              {isPending ? (
+                <div className="text-center py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500 mx-auto"></div>
+                  <p className="text-sm text-gray-600 mt-2">
+                    Exchanging authorization code...
+                  </p>
+                </div>
+              ) : oauthUrl ? (
                 <div className="space-y-3">
-                  <Button asChild className="w-full">
-                    <a
-                      href={oauthUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <ExternalLink className="w-4 h-4 mr-2" />
-                      Open YouTube OAuth
-                    </a>
+                  <Button
+                    className="w-full"
+                    onClick={() => {
+                      // Use same window instead of opening new tab
+                      window.location.href = oauthUrl;
+                    }}
+                  >
+                    <ExternalLink className="w-4 h-4 mr-2" />
+                    Authorize YouTube Access
                   </Button>
                   <Button
                     variant="outline"
@@ -133,30 +174,60 @@ export default function YouTubeOAuthSetup() {
                     Copy URL
                   </Button>
                 </div>
-              )}
+              ) : null}
             </CardContent>
           </Card>
 
           {/* Step 3 */}
-          <Card
-            className={step >= 3 ? 'border-blue-200 bg-blue-50' : 'opacity-50'}
-          >
+          <Card className={step >= 3 ? '' : 'opacity-50'}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <span className="w-5 h-5 rounded-full bg-blue-500 text-white text-xs flex items-center justify-center">
-                  3
-                </span>
-                Get Refresh Token
+                {step >= 3 ? (
+                  <CheckCircle className="w-5 h-5 text-green-500" />
+                ) : (
+                  <span className="w-5 h-5 rounded-full bg-blue-500 text-white text-xs flex items-center justify-center">
+                    3
+                  </span>
+                )}
+                Setup Complete
               </CardTitle>
               <CardDescription>
-                Copy the token to your .env file
+                {step >= 3
+                  ? 'YouTube OAuth configured successfully!'
+                  : 'Copy the token to your .env file'}
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-gray-600">
-                After authorization, you'll be redirected back with your refresh
-                token.
-              </p>
+              {step >= 3 && refreshToken ? (
+                <div className="space-y-3">
+                  <Alert>
+                    <CheckCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      Refresh token obtained successfully! Add it to your .env
+                      file:
+                    </AlertDescription>
+                  </Alert>
+                  <div className="bg-gray-50 dark:bg-background p-3 rounded text-sm font-mono break-all">
+                    YOUTUBE_REFRESH_TOKEN="{refreshToken}"
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      copyToClipboard(`YOUTUBE_REFRESH_TOKEN="${refreshToken}"`)
+                    }
+                    className="w-full"
+                  >
+                    <Copy className="w-4 h-4 mr-2" />
+                    Copy to Clipboard
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-600">
+                  After authorization, you'll be redirected back with your
+                  refresh token.
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -183,7 +254,7 @@ export default function YouTubeOAuthSetup() {
 
             <div className="space-y-2">
               <h4 className="font-medium">Current Configuration:</h4>
-              <div className="bg-gray-50 p-3 rounded text-sm font-mono">
+              <div className="bg-gray-50 dark:bg-background p-3 rounded text-sm font-mono">
                 <div>
                   Client ID:
                   186919940991-29afum3a738j14putojjibsnsb4o51jg.apps.googleusercontent.com
@@ -214,7 +285,7 @@ export default function YouTubeOAuthSetup() {
               <p>
                 <strong>If you see "Error 400: invalid_request":</strong>
               </p>
-              <ul className="ml-4 space-y-1 text-gray-600">
+              <ul className="ml-4 space-y-1">
                 <li>
                   • Check that the redirect URI in Google Cloud Console matches
                   exactly:{' '}
@@ -233,7 +304,7 @@ export default function YouTubeOAuthSetup() {
               <p className="mt-4">
                 <strong>If you see "Access blocked":</strong>
               </p>
-              <ul className="ml-4 space-y-1 text-gray-600">
+              <ul className="ml-4 space-y-1">
                 <li>
                   • Your OAuth app might need verification if it's requesting
                   sensitive scopes

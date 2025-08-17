@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { baseProcedure, createTRPCRouter } from '../init';
 import { dashboardRouter } from './_dashboard';
 import { simulationRouter } from './_simulation';
+import { youtubeRouter } from './_youtube';
 
 export const appRouter = createTRPCRouter({
   hello: baseProcedure
@@ -17,6 +18,7 @@ export const appRouter = createTRPCRouter({
     }),
   dashboard: dashboardRouter,
   simulation: simulationRouter,
+  youtube: youtubeRouter,
 });
 
 // export type definition of API
