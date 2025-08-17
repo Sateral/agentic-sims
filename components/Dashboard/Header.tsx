@@ -25,7 +25,9 @@ const Header: React.FC<HeaderProps> = ({
   return (
     <div className="flex justify-between items-center">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">AI Video Dashboard</h1>
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+          AI Video Dashboard
+        </h1>
         <p className="text-gray-600">
           Monitor your simulation videos across all platforms
         </p>
