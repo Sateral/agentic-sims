@@ -23,10 +23,17 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { TabsContent } from '@/components/ui/tabs';
 
 import type { AppRouter } from '@/trpc/routers/_app';
 import { inferRouterOutputs } from '@trpc/server';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import useQueryStore from '@/stores/query-store';
 
 type RouterOutput = inferRouterOutputs<AppRouter>;
 type MetricsOverTimeOutput = RouterOutput['dashboard']['getMetricsOverTime'];
@@ -45,10 +52,8 @@ const MetricsOverTime = ({
   platformComparison,
   simulationTypes,
 }: MetricsOverTimeProps) => {
-  const [selectedMetric, setSelectedMetric] = useState<
-    'views' | 'likes' | 'comments' | 'shares'
-  >('views');
-  const [timeframe, setTimeframe] = useState<'day' | 'week' | 'month'>('week');
+  const { selectedMetric, setSelectedMetric, timeframe, setTimeframe } =
+    useQueryStore();
 
   const platformData =
     platformComparison
@@ -81,25 +86,33 @@ const MetricsOverTime = ({
               </CardDescription>
             </div>
             <div className="flex gap-2">
-              <select
+              <Select
                 value={selectedMetric}
-                onChange={(e) => setSelectedMetric(e.target.value as any)}
-                className="px-3 py-1 border rounded"
+                onValueChange={(value) => setSelectedMetric(value as any)}
               >
-                <option value="views">Views</option>
-                <option value="likes">Likes</option>
-                <option value="comments">Comments</option>
-                <option value="shares">Shares</option>
-              </select>
-              <select
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a metric" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="views">Views</SelectItem>
+                  <SelectItem value="likes">Likes</SelectItem>
+                  <SelectItem value="comments">Comments</SelectItem>
+                  <SelectItem value="shares">Shares</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
                 value={timeframe}
-                onChange={(e) => setTimeframe(e.target.value as any)}
-                className="px-3 py-1 border rounded"
+                onValueChange={(value) => setTimeframe(value as any)}
               >
-                <option value="day">Last 24h</option>
-                <option value="week">Last Week</option>
-                <option value="month">Last Month</option>
-              </select>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a timeframe" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="day">Last 24h</SelectItem>
+                  <SelectItem value="week">Last Week</SelectItem>
+                  <SelectItem value="month">Last Month</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardHeader>

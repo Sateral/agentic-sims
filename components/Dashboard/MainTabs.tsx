@@ -1,20 +1,11 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 
-import { Badge } from '../ui/badge';
-import { AlertCircle, CheckCircle, Settings, X } from 'lucide-react';
-import { Button } from '../ui/button';
 import MetricsOverTime from './Tabs/MetricsOverTime';
 import RecentUploads from './Tabs/RecentUploads';
 import TopVideos from './Tabs/TopVideos';
 import SimulationsTab from './Tabs/SimulationsTab';
+import Settings from './Tabs/Settings';
 
 import type { AppRouter } from '@/trpc/routers/_app';
 import { inferRouterOutputs } from '@trpc/server';
