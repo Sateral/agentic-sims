@@ -1,8 +1,8 @@
-# Python Environment Setup - Ubuntu
+# Python Environment Setup - Windows
 
 ## ✅ Installation Complete
 
-Your Python environment for video generation is now fully set up on Ubuntu with all required packages.
+Your Python environment for video generation is now fully set up on Windows with all required packages.
 
 ### Installed Packages
 
@@ -26,17 +26,18 @@ Your Python environment for video generation is now fully set up on Ubuntu with 
 
 ### Virtual Environment
 
-- **Location**: `/home/danielkop/Projects/agentic-sims/venv/`
-- **Python executable**: `/home/danielkop/Projects/agentic-sims/venv/bin/python`
-- **Python version**: 3.12.3
+- **Location**: `D:/Coding/React Projects/agentic-sims/venv/`
+- **Python executable**: `D:/Coding/React Projects/agentic-sims/venv/Scripts/python.exe`
+- **Python version**: 3.12.10
 
 ### How to Use
 
 #### Manual Activation
 
 ```bash
-cd /home/danielkop/Projects/agentic-sims
-source venv/bin/activate
+cd "D:/Coding/React Projects/agentic-sims"
+# On Windows
+.\venv\Scripts\activate
 # Now you can run Python scripts with all packages available
 python your_script.py
 # To deactivate: deactivate
@@ -53,14 +54,15 @@ python your_script.py
 
 ```bash
 # Test that all packages are working
-python test_python_env.py
+# python test_python_env.py
 ```
 
 ### Integration with Video Generator
 
 The `VideoGenerator` class has been updated to use the virtual environment Python:
 
-- **Python path**: `/home/danielkop/Projects/agentic-sims/venv/bin/python`
+- **Python path**: `D:/Coding/React Projects/agentic-sims/venv/Scripts/python.exe` (Windows)
+- **Output directory**: `D:/Coding/React Projects/agentic-sims/temp/videos/` (Windows)
 - **All simulation scripts** will now run with access to pygame, opencv, numpy, etc.
 
 ### Next Steps

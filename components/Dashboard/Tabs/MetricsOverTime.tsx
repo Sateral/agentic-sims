@@ -40,26 +40,35 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from '@/components/ui/chart';
+import { useTRPC } from '@/trpc/client';
+import { useQuery } from '@tanstack/react-query';
 
-type RouterOutput = inferRouterOutputs<AppRouter>;
-type MetricsOverTimeOutput = RouterOutput['dashboard']['getMetricsOverTime'];
-type PlatformDataOutput = RouterOutput['dashboard']['getPlatformComparison'];
-type SimulationTypeOutput =
-  RouterOutput['dashboard']['getSimulationTypePerformance'];
+const MetricsOverTime = () => {
+  const {
+    selectedMetric,
+    setSelectedMetric,
+    selectedPlatform,
+    timeframe,
+    setTimeframe,
+  } = useQueryStore();
 
-interface MetricsOverTimeProps {
-  metricsOverTime: MetricsOverTimeOutput | undefined;
-  platformComparison: PlatformDataOutput | undefined;
-  simulationTypes: SimulationTypeOutput | undefined;
-}
+  const trpc = useTRPC();
 
-const MetricsOverTime = ({
-  metricsOverTime,
-  platformComparison,
-  simulationTypes,
-}: MetricsOverTimeProps) => {
-  const { selectedMetric, setSelectedMetric, timeframe, setTimeframe } =
-    useQueryStore();
+  const { data: metricsOverTime } = useQuery(
+    trpc.dashboard.getMetricsOverTime.queryOptions({
+      days: timeframe === 'day' ? 1 : timeframe === 'week' ? 7 : 30,
+      platform: selectedPlatform === 'all' ? undefined : selectedPlatform,
+      metric: selectedMetric,
+    })
+  );
+
+  const { data: platformComparison } = useQuery(
+    trpc.dashboard.getPlatformComparison.queryOptions()
+  );
+
+  const { data: simulationTypes } = useQuery(
+    trpc.dashboard.getSimulationTypePerformance.queryOptions()
+  );
 
   const platformData =
     platformComparison
@@ -70,7 +79,6 @@ const MetricsOverTime = ({
           platform.platform.slice(1),
         avgViews: platform.avgViews,
         totalUploads: platform.count,
-        color: '#FF0000', // YouTube red
       })) || [];
 
   const simulationTypeData =

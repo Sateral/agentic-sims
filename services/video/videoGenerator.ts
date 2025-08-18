@@ -18,9 +18,15 @@ export interface SimulationParameters {
 }
 
 export class VideoGenerator {
-  private outputDir = '/tmp/videos';
+  private outputDir: string;
 
   constructor() {
+    // Use appropriate output directory for the OS
+    const isWindows = process.platform === 'win32';
+    this.outputDir = isWindows
+      ? path.join(process.cwd(), 'temp', 'videos')
+      : '/tmp/videos';
+
     this.ensureOutputDir();
   }
 
@@ -30,6 +36,14 @@ export class VideoGenerator {
     } catch (error) {
       console.error('Failed to create output directory:', error);
     }
+  }
+
+  /**
+   * Format path for use in Python scripts (handle Windows backslashes)
+   */
+  private formatPathForPython(filePath: string): string {
+    // Convert Windows backslashes to forward slashes for Python
+    return filePath.replace(/\\/g, '/');
   }
 
   /**
@@ -72,7 +86,7 @@ export class VideoGenerator {
     const outputPath = path.join(this.outputDir, `${videoId}.mp4`);
 
     // Create video record in database
-    const video = await prisma.video.create({
+    await prisma.video.create({
       data: {
         id: videoId,
         simulationId,
@@ -176,9 +190,8 @@ balls = [Ball() for _ in range(${params.particleCount || 15})]
 
 # Video writer
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-out = cv2.VideoWriter('${outputPath.replace(
-      /\\/g,
-      '/'
+out = cv2.VideoWriter('${this.formatPathForPython(
+      outputPath
     )}', fourcc, FPS, (WIDTH, HEIGHT))
 
 # Simulation loop
@@ -248,9 +261,8 @@ class Particle:
 particles = [Particle() for _ in range(PARTICLE_COUNT)]
 
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-out = cv2.VideoWriter('${outputPath.replace(
-      /\\/g,
-      '/'
+out = cv2.VideoWriter('${this.formatPathForPython(
+      outputPath
     )}', fourcc, FPS, (WIDTH, HEIGHT))
 
 for frame in range(FPS * DURATION):
@@ -298,9 +310,8 @@ velocity_x = np.zeros((grid_size, grid_size))
 velocity_y = np.zeros((grid_size, grid_size))
 
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-out = cv2.VideoWriter('${outputPath.replace(
-      /\\/g,
-      '/'
+out = cv2.VideoWriter('${this.formatPathForPython(
+      outputPath
     )}', fourcc, FPS, (WIDTH, HEIGHT))
 
 for frame in range(FPS * DURATION):
@@ -369,9 +380,8 @@ bodies[2].vy = 2.5
 bodies[3].vx = -1.8
 
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-out = cv2.VideoWriter('${outputPath.replace(
-      /\\/g,
-      '/'
+out = cv2.VideoWriter('${this.formatPathForPython(
+      outputPath
     )}', fourcc, FPS, (WIDTH, HEIGHT))
 
 for frame in range(FPS * DURATION):
@@ -412,8 +422,12 @@ out.release()
   private async runPythonScript(script: string): Promise<void> {
     return new Promise((resolve, reject) => {
       // Use the virtual environment Python executable
-      const pythonPath =
-        '/home/danielkop/Projects/agentic-sims/venv/bin/python';
+      // Windows virtual environment structure is different from Linux
+      const isWindows = process.platform === 'win32';
+      const pythonPath = isWindows
+        ? 'D:/Coding/React Projects/agentic-sims/venv/Scripts/python.exe'
+        : '/home/danielkop/Projects/agentic-sims/venv/bin/python';
+
       const python = spawn(pythonPath, ['-c', script]);
 
       python.stdout.on('data', (data) => {

@@ -18,21 +18,7 @@ type SimulationTypeOutput =
 type RecentUploadsOutput = RouterOutput['dashboard']['getRecentUploads'];
 type TopVideosOutput = RouterOutput['dashboard']['getTopPerformingVideos'];
 
-interface MainTabsProps {
-  metricsOverTime: MetricsOverTimeOutput | undefined;
-  platformComparison: PlatformDataOutput | undefined;
-  simulationTypes: SimulationTypeOutput | undefined;
-  recentUploads: RecentUploadsOutput | undefined;
-  topVideos: TopVideosOutput | undefined;
-}
-
-const MainTabs = ({
-  metricsOverTime,
-  platformComparison,
-  simulationTypes,
-  recentUploads,
-  topVideos,
-}: MainTabsProps) => {
+const MainTabs = () => {
   return (
     <Tabs defaultValue="analytics" className="space-y-4">
       <TabsList className="grid w-full grid-cols-4">
@@ -44,21 +30,17 @@ const MainTabs = ({
 
       <TabsContent value="analytics" className="space-y-4">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <MetricsOverTime
-            metricsOverTime={metricsOverTime}
-            platformComparison={platformComparison}
-            simulationTypes={simulationTypes}
-          />
+          <MetricsOverTime />
         </div>
       </TabsContent>
 
       <TabsContent value="videos" className="space-y-4">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Recent Uploads */}
-          <RecentUploads recentUploads={recentUploads} />
+          <RecentUploads />
 
           {/* Top Performing Videos */}
-          <TopVideos topVideos={topVideos} />
+          <TopVideos />
         </div>
       </TabsContent>
 

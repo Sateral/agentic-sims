@@ -30,10 +30,6 @@ const Settings = () => {
     reason: 'Loading...',
   };
 
-  function refreshStatus() {
-    checkConnection();
-  }
-
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <Card>
@@ -97,7 +93,7 @@ const Settings = () => {
                 <div className="text-sm text-gray-500">
                   {youtubeConnection.connected
                     ? 'API Connected'
-                    : youtubeConnection.reason || 'OAuth Setup Required'}
+                    : 'OAuth Setup Required'}
                 </div>
               </div>
             </div>
@@ -113,11 +109,11 @@ const Settings = () => {
                     <CheckCircle className="w-3 h-3 mr-1" />
                     Connected
                   </Badge>
-                  {/* {youtubeConnection.channelId && (
+                  {youtubeConnection.channelId && (
                     <div className="text-xs text-gray-500">
                       ID: {youtubeConnection.channelId.substring(0, 8)}...
                     </div>
-                  )} */}
+                  )}
                 </div>
               ) : (
                 <>

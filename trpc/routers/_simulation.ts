@@ -3,9 +3,12 @@ import { baseProcedure, createTRPCRouter } from '../init';
 import { prisma } from '@/lib/prisma';
 import { VideoGenerator } from '@/services/video/videoGenerator';
 import { UploadAgent } from '@/services/ai/workflow';
+import { VideoAnalyzer } from '@/services/ai/analyzeSimulation';
+import path from 'path';
 
 const videoGenerator = new VideoGenerator();
 const uploadAgent = new UploadAgent();
+const videoAnalyzer = new VideoAnalyzer();
 
 export const simulationRouter = createTRPCRouter({
   // Get all simulations with their videos and upload status
@@ -123,36 +126,152 @@ export const simulationRouter = createTRPCRouter({
     .input(z.object({ simulationId: z.string() }))
     .mutation(async ({ input }) => {
       try {
-        // This will analyze all unanalyzed videos from the simulation
+        // Get all unanalyzed videos from the simulation
         const videos = await prisma.video.findMany({
           where: {
             simulationId: input.simulationId,
             status: 'generated',
             aiScore: null,
           },
+          include: {
+            simulation: true,
+          },
         });
 
-        // For now, simulate AI analysis
-        for (const video of videos) {
-          // Simulate AI analysis with random score
-          const aiScore = Math.random() * 0.6 + 0.4; // Random score between 0.4-1.0
+        const analyzedVideos = [];
 
-          await prisma.video.update({
-            where: { id: video.id },
-            data: {
-              aiScore,
-              status: aiScore > 0.7 ? 'selected' : 'generated',
-            },
-          });
+        // Analyze each video with AI
+        for (const video of videos) {
+          try {
+            const videoPath = path.join(
+              process.cwd(),
+              'temp',
+              'videos',
+              `${video.id}.mp4`
+            );
+            const analysis = await videoAnalyzer.analyzeVideo(
+              videoPath,
+              video.simulation.type
+            );
+
+            // Update video with AI analysis results
+            const updatedVideo = await prisma.video.update({
+              where: { id: video.id },
+              data: {
+                aiScore: analysis.score,
+                title: analysis.suggestedTitle,
+                description: analysis.suggestedDescription,
+                status: analysis.score > 0.7 ? 'selected' : 'generated',
+              },
+            });
+
+            analyzedVideos.push({
+              ...updatedVideo,
+              analysis: {
+                score: analysis.score,
+                appeal: analysis.appeal,
+                reasons: analysis.reasons,
+                visualQualities: analysis.visualQualities,
+                hashtags: analysis.hashtags,
+              },
+            });
+          } catch (error) {
+            console.error(`Failed to analyze video ${video.id}:`, error);
+
+            // Update with fallback score
+            await prisma.video.update({
+              where: { id: video.id },
+              data: {
+                aiScore: 0.5,
+                status: 'generated',
+              },
+            });
+          }
         }
 
         return {
           analyzed: videos.length,
-          message: `Analyzed ${videos.length} videos`,
+          successful: analyzedVideos.length,
+          videos: analyzedVideos,
+          message: `Analyzed ${videos.length} videos, ${analyzedVideos.length} successful`,
         };
       } catch (error) {
         throw new Error(
           `Failed to analyze videos: ${
+            error instanceof Error ? error.message : 'Unknown error'
+          }`
+        );
+      }
+    }),
+
+  // Analyze a single video
+  analyzeVideo: baseProcedure
+    .input(
+      z.object({
+        videoId: z.string(),
+        forceReanalyze: z.boolean().default(false),
+      })
+    )
+    .mutation(async ({ input }) => {
+      try {
+        const video = await prisma.video.findUnique({
+          where: { id: input.videoId },
+          include: { simulation: true },
+        });
+
+        if (!video) {
+          throw new Error('Video not found');
+        }
+
+        // Skip if already analyzed unless force re-analyze
+        if (video.aiScore && !input.forceReanalyze) {
+          return {
+            videoId: input.videoId,
+            cached: true,
+            score: video.aiScore,
+            message: 'Using cached analysis result',
+          };
+        }
+
+        const videoPath = path.join(
+          process.cwd(),
+          'temp',
+          'videos',
+          `${video.id}.mp4`
+        );
+        const analysis = await videoAnalyzer.analyzeVideo(
+          videoPath,
+          video.simulation.type
+        );
+
+        // Update video with AI analysis results
+        await prisma.video.update({
+          where: { id: input.videoId },
+          data: {
+            aiScore: analysis.score,
+            title: analysis.suggestedTitle,
+            description: analysis.suggestedDescription,
+            status: analysis.score > 0.7 ? 'selected' : 'generated',
+          },
+        });
+
+        return {
+          videoId: input.videoId,
+          cached: false,
+          analysis: {
+            score: analysis.score,
+            appeal: analysis.appeal,
+            reasons: analysis.reasons,
+            suggestedTitle: analysis.suggestedTitle,
+            suggestedDescription: analysis.suggestedDescription,
+            visualQualities: analysis.visualQualities,
+            hashtags: analysis.hashtags,
+          },
+          message: 'Video analyzed successfully',
+        };
+      } catch (error) {
+        throw new Error(
+          `Failed to analyze video: ${
             error instanceof Error ? error.message : 'Unknown error'
           }`
         );

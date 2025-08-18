@@ -9,17 +9,25 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
-import type { AppRouter } from '@/trpc/routers/_app';
-import { inferRouterOutputs } from '@trpc/server';
+import { useTRPC } from '@/trpc/client';
+import { useQuery } from '@tanstack/react-query';
+import useQueryStore from '@/stores/query-store';
 
-type RouterOutput = inferRouterOutputs<AppRouter>;
-type TopVideosOutput = RouterOutput['dashboard']['getTopPerformingVideos'];
+const TopVideos = () => {
+  const { selectedPlatform, selectedMetric, timeframe } = useQueryStore();
 
-interface TopVideosProps {
-  topVideos: TopVideosOutput | undefined;
-}
+  const trpc = useTRPC();
 
-const TopVideos = ({ topVideos }: TopVideosProps) => {
+  const { data: topVideos } = useQuery(
+    trpc.dashboard.getTopPerformingVideos.queryOptions({
+      limit: 5,
+      platform: selectedPlatform === 'all' ? undefined : selectedPlatform,
+      sortBy: selectedMetric,
+      timeframe:
+        timeframe === 'day' ? 'day' : timeframe === 'week' ? 'week' : 'month',
+    })
+  );
+
   return (
     <Card>
       <CardHeader>

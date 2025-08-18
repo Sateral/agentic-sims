@@ -10,17 +10,15 @@ import {
 import { Eye, Heart, MessageCircle, Share } from 'lucide-react';
 import React from 'react';
 
-import type { AppRouter } from '@/trpc/routers/_app';
-import { inferRouterOutputs } from '@trpc/server';
+import { useTRPC } from '@/trpc/client';
+import { useQuery } from '@tanstack/react-query';
 
-type RouterOutput = inferRouterOutputs<AppRouter>;
-type RecentUploadsOutput = RouterOutput['dashboard']['getRecentUploads'];
+const RecentUploads = () => {
+  const trpc = useTRPC();
+  const { data: recentUploads } = useQuery(
+    trpc.dashboard.getRecentUploads.queryOptions({ limit: 10 })
+  );
 
-interface RecentUploadsProps {
-  recentUploads: RecentUploadsOutput | undefined;
-}
-
-const RecentUploads = ({ recentUploads }: RecentUploadsProps) => {
   return (
     <Card className="col-span-1 lg:col-span-2">
       <CardHeader>
