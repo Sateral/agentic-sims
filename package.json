@@ -14,7 +14,9 @@
     "prisma:studio": "prisma studio",
     "setup": "chmod +x setup.sh && ./setup.sh",
     "test:video": "tsx scripts/testVideoGeneration.ts",
-    "setup:youtube": "tsx scripts/setupYouTubeOAuth.ts"
+    "test:analysis": "tsx scripts/testVideoAnalysis.ts",
+    "setup:youtube": "tsx scripts/setupYouTubeOAuth.ts",
+    "test:ai": "tsx services/ai/aitest.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -72,6 +74,7 @@
     "react-resizable-panels": "^3.0.4",
     "recharts": "^2.15.4",
     "server-only": "^0.0.1",
+    "sharp": "^0.34.3",
     "sonner": "^2.0.7",
     "superjson": "^2.2.2",
     "tailwind-merge": "^3.3.1",

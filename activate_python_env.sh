@@ -4,7 +4,7 @@
 # Run this script to activate the virtual environment with all required packages
 
 echo "Activating Python virtual environment..."
-cd /home/danielkop/Projects/agentic-sims
+cd D:/Coding/React Projects/agentic-sims
 source venv/bin/activate
 
 echo "Python virtual environment activated!"

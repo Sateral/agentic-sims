@@ -19,7 +19,7 @@ export class UploadAgent {
       const selectedVideos = await this.selectBestVideos();
 
       // 3. Upload to platforms
-      await this.uploadToAllPlatforms(selectedVideos);
+      // await this.uploadToAllPlatforms(selectedVideos);
 
       console.log('Daily upload process completed successfully');
     } catch (error) {
@@ -42,7 +42,7 @@ export class UploadAgent {
     for (const type of simulationTypes) {
       try {
         console.log(`Generating ${type} simulations...`);
-        await this.videoGenerator.generateVariations(type, 5);
+        await this.videoGenerator.generateVariations(type, 1);
         console.log(`✓ Generated ${type} simulations`);
       } catch (error) {
         console.error(`Failed to generate ${type} simulations:`, error);
@@ -75,7 +75,12 @@ export class UploadAgent {
     const analyzedVideos = await Promise.all(
       videos.map(async (video) => {
         try {
-          const videoPath = path.join('/tmp/videos', `${video.id}.mp4`);
+          const videoPath = path.join(
+            process.cwd(),
+            'temp',
+            'videos',
+            `${video.id}.mp4`
+          );
           const analysis = await this.videoAnalyzer.analyzeVideo(
             videoPath,
             video.simulation.type
@@ -140,7 +145,12 @@ export class UploadAgent {
 
   private async uploadToPlatform(video: any, platform: string) {
     const platformService = PlatformServiceFactory.createService(platform);
-    const videoPath = path.join('/tmp/videos', `${video.id}.mp4`);
+    const videoPath = path.join(
+      process.cwd(),
+      'temp',
+      'videos',
+      `${video.id}.mp4`
+    );
 
     // Prepare tags based on simulation type
     const tags = this.generateTags(video.simulation.type);
@@ -263,7 +273,7 @@ export class UploadAgent {
 
     // Delete old video files (videos are not stored permanently)
     try {
-      const videoDir = '/tmp/videos';
+      const videoDir = path.join(process.cwd(), 'temp', 'videos');
       const files = await fs.readdir(videoDir);
 
       for (const file of files) {
