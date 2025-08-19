@@ -4,6 +4,9 @@ import path from 'path';
 import sharp from 'sharp';
 import dotenv from 'dotenv';
 
+import ffmpegPath from 'ffmpeg-static';
+import Ffmpeg from 'fluent-ffmpeg';
+
 dotenv.config();
 
 const openai = new OpenAI({
@@ -26,15 +29,14 @@ export interface VideoAnalysis {
 }
 
 export class VideoAnalyzer {
-  private frameExtractCommand = 'ffmpeg'; // Ensure ffmpeg is installed
-
   async analyzeVideo(
     videoPath: string,
+    videoId: string,
     simulationType: string
   ): Promise<VideoAnalysis> {
     try {
       // 1. Extract key frames from video
-      const frameImages = await this.extractKeyFrames(videoPath, 6);
+      const frameImages = await this.extractKeyFrames(videoPath, videoId, 6);
 
       // 2. Convert frames to base64 for OpenAI Vision API
       const frameData = await this.prepareFramesForAnalysis(frameImages);
@@ -54,37 +56,66 @@ export class VideoAnalyzer {
     }
   }
 
+  private getFFmpegPath(): string {
+    if (!ffmpegPath) {
+      throw new Error('FFmpeg is not installed');
+    }
+
+    // If the path contains ROOT, resolve it properly
+    if (ffmpegPath.includes('\\ROOT\\')) {
+      // Resolve to the actual project root
+      const projectRoot = process.cwd();
+      const relativePath = ffmpegPath.replace('\\ROOT\\', '');
+      const resolvedPath = path.join(projectRoot, relativePath);
+      // console.log(`Resolved FFmpeg path from ${ffmpegPath} to ${resolvedPath}`);
+      return resolvedPath;
+    }
+
+    // If it's already absolute and exists, use it
+    if (path.isAbsolute(ffmpegPath)) {
+      return ffmpegPath;
+    }
+
+    // Otherwise resolve relative to project root
+    const resolvedPath = path.resolve(process.cwd(), ffmpegPath);
+    // console.log(`Resolved relative FFmpeg path to: ${resolvedPath}`);
+    return resolvedPath;
+  }
+
   /**
    * Extract key frames from video at specific intervals
    */
-  private async extractKeyFrames(
+  async extractKeyFrames(
     videoPath: string,
+    videoId: string,
     frameCount: number = 6
   ): Promise<string[]> {
-    const { spawn } = require('child_process');
-    const outputDir = path.join(path.dirname(videoPath), 'frames');
+    const baseDir = path.dirname(videoPath);
+    const outputDir = path.join(baseDir, `frames_${videoId}`);
 
     // Create frames directory
     await fs.mkdir(outputDir, { recursive: true });
 
-    const frameFiles: string[] = [];
-
     return new Promise((resolve, reject) => {
-      // Extract frames at even intervals
-      const ffmpeg = spawn('ffmpeg', [
-        '-i',
-        videoPath,
-        '-vf',
-        `select='not(mod(n\\,${Math.floor((30 * 15) / frameCount)}))'`, // Every ~2.5 seconds for 15s video
-        '-vsync',
-        'vfr',
-        '-frame_pts',
-        '1',
-        path.join(outputDir, 'frame_%03d.jpg'),
-      ]);
+      // Tell fluent-ffmpeg where FFmpeg is
+      const resolvedFFmpegPath = this.getFFmpegPath();
+      Ffmpeg.setFfmpegPath(resolvedFFmpegPath);
 
-      ffmpeg.on('close', async (code: number | null) => {
-        if (code === 0) {
+      const command = Ffmpeg()
+        .input(videoPath)
+        .saveToFile(path.join(outputDir, 'frame_%03d.jpg'))
+        .FPS(1 / 2.5) // Extract one frame every 2.5 seconds
+        .on('progress', (progress) => {
+          if (progress.percent) {
+            console.log(`Processing: ${Math.floor(progress.percent)}% done`);
+          }
+        })
+        .on('end', async (stdout, stderr) => {
+          if (stderr) {
+            // ffmpeg can output to stderr on success, so just log it
+            console.warn('FFmpeg stderr:', stderr);
+          }
+
           try {
             const files = await fs.readdir(outputDir);
             const sortedFiles = files
@@ -96,23 +127,22 @@ export class VideoAnalyzer {
             resolve(sortedFiles);
           } catch (error) {
             reject(error);
+          } finally {
+            // Ensure the process is killed to release file handles
+            if (command) {
+              command.kill('SIGKILL');
+            }
           }
-        } else {
-          reject(new Error(`ffmpeg failed with code ${code}`));
-        }
-      });
-
-      ffmpeg.on('error', (error: Error) => {
-        reject(
-          new Error(
-            `FFmpeg error: ${error.message}. Make sure FFmpeg is installed and available in PATH.`
-          )
-        );
-      });
-
-      ffmpeg.stderr.on('data', (data: Buffer) => {
-        console.log(`ffmpeg: ${data}`);
-      });
+        })
+        .on('error', (error, stdout, stderr) => {
+          console.error('FFmpeg stdout:', stdout);
+          console.error('FFmpeg stderr:', stderr);
+          reject(
+            new Error(
+              `FFmpeg error: ${error.message}. Make sure FFmpeg is installed and available in PATH.`
+            )
+          );
+        });
     });
   }
 
@@ -126,8 +156,11 @@ export class VideoAnalyzer {
 
     for (const framePath of framePaths) {
       try {
+        // Read the entire file into a buffer first to avoid file locking issues
+        const fileBuffer = await fs.readFile(framePath);
+
         // Resize image to reduce API costs (max 512px width)
-        const resizedBuffer = await sharp(framePath)
+        const resizedBuffer = await sharp(fileBuffer)
           .resize(512, null, { withoutEnlargement: true })
           .jpeg({ quality: 80 })
           .toBuffer();
@@ -384,79 +417,42 @@ Respond in this JSON format:
   private async cleanupFrames(framePaths: string[]): Promise<void> {
     if (framePaths.length === 0) return;
 
-    // Add a small delay to ensure FFmpeg has finished writing files
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const frameDir = path.dirname(framePaths[0]);
 
-    // On Windows, sometimes it's better to just schedule cleanup for later
-    // if immediate deletion fails
-    if (process.platform === 'win32') {
-      await this.cleanupFramesWindows(framePaths);
-    } else {
-      await this.cleanupFramesUnix(framePaths);
+    try {
+      // Use recursive removal which is more robust
+      await fs.rm(frameDir, { recursive: true, force: true });
+      console.log(`Successfully cleaned up directory: ${frameDir}`);
+    } catch (error: any) {
+      console.warn(
+        `Could not clean up directory ${frameDir}. This might be due to file locks. Manual cleanup may be required.`,
+        error.code
+      );
     }
   }
 
   /**
    * Windows-specific cleanup with graceful degradation
    */
-  private async cleanupFramesWindows(framePaths: string[]): Promise<void> {
-    const frameDir = path.dirname(framePaths[0]);
-
-    for (const framePath of framePaths) {
-      try {
-        await fs.unlink(framePath);
-      } catch (error: any) {
-        if (error.code === 'EPERM' || error.code === 'EBUSY') {
-          // File is still locked, try to rename it for later cleanup
-          try {
-            const tempName = `${framePath}.delete_me_${Date.now()}`;
-            await fs.rename(framePath, tempName);
-            console.log(
-              `Scheduled file for cleanup: ${path.basename(framePath)}`
-            );
-
-            // Try to delete the renamed file after a delay
-            setTimeout(async () => {
-              try {
-                await fs.unlink(tempName);
-              } catch {
-                // If it still fails, leave it for manual cleanup
-              }
-            }, 5000);
-          } catch {
-            // If rename fails too, just leave it
-            console.warn(
-              `Could not clean up frame: ${path.basename(
-                framePath
-              )} (file may be locked)`
-            );
-          }
-        }
-      }
-    }
-
-    // Try to remove directory but don't worry if it fails
-    try {
-      await fs.rmdir(frameDir);
-    } catch {
-      // Directory cleanup is not critical
-    }
+  private async cleanupFramesWindows(
+    framePaths: string[],
+    videoId: string
+  ): Promise<void> {
+    // The new cleanupFrames implementation is platform-agnostic and more robust.
+    // This method is kept for compatibility but delegates to the main one.
+    await this.cleanupFrames(framePaths);
   }
 
   /**
    * Unix/Linux cleanup (more reliable)
    */
-  private async cleanupFramesUnix(framePaths: string[]): Promise<void> {
-    for (const framePath of framePaths) {
-      await this.deleteFileWithRetry(framePath, 3);
-    }
-
-    try {
-      const frameDir = path.dirname(framePaths[0]);
-      await this.deleteDirectoryWithRetry(frameDir, 3);
-    } catch (error) {
-      // Directory not empty or doesn't exist, ignore
-    }
+  private async cleanupFramesUnix(
+    framePaths: string[],
+    videoId: string
+  ): Promise<void> {
+    // The new cleanupFrames implementation is platform-agnostic and more robust.
+    // This method is kept for compatibility but delegates to the main one.
+    await this.cleanupFrames(framePaths);
   }
 
   /**
