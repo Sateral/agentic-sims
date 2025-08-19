@@ -2,6 +2,7 @@ import { VideoAnalyzer } from './analyzeSimulation';
 import { PlatformServiceFactory } from '../platforms/platformServices';
 import { VideoGenerator } from '../video/videoGenerator';
 import { prisma } from '@/lib/prisma';
+import { promises as fs } from 'fs';
 import path from 'path';
 
 export class UploadAgent {
@@ -19,7 +20,7 @@ export class UploadAgent {
       const selectedVideos = await this.selectBestVideos();
 
       // 3. Upload to platforms
-      // await this.uploadToAllPlatforms(selectedVideos);
+      await this.uploadToAllPlatforms(selectedVideos);
 
       console.log('Daily upload process completed successfully');
     } catch (error) {
@@ -34,8 +35,8 @@ export class UploadAgent {
     const simulationTypes = [
       'bouncing_balls',
       'particle_physics',
-      'fluid_dynamics',
-      'gravity_sim',
+      // 'fluid_dynamics',
+      // 'gravity_sim',
     ];
 
     // Generate 5 variations per type
@@ -83,6 +84,7 @@ export class UploadAgent {
           );
           const analysis = await this.videoAnalyzer.analyzeVideo(
             videoPath,
+            video.id,
             video.simulation.type
           );
 
@@ -122,12 +124,14 @@ export class UploadAgent {
 
     for (const video of videos) {
       console.log(`Uploading video: ${video.title}`);
+      let allUploadsSucceeded = true;
 
       for (const platform of platforms) {
         try {
           await this.uploadToPlatform(video, platform);
           console.log(`✓ Uploaded ${video.title} to ${platform}`);
         } catch (error) {
+          allUploadsSucceeded = false;
           console.error(
             `Failed to upload ${video.title} to ${platform}:`,
             error
@@ -140,6 +144,22 @@ export class UploadAgent {
         where: { id: video.id },
         data: { status: 'selected' },
       });
+
+      // If all uploads were successful, delete the local video file
+      if (allUploadsSucceeded) {
+        try {
+          const videoPath = path.join(
+            process.cwd(),
+            'temp',
+            'videos',
+            `${video.id}.mp4`
+          );
+          await fs.unlink(videoPath);
+          console.log(`✓ Deleted local video file: ${video.id}.mp4`);
+        } catch (error) {
+          console.error(`Failed to delete video file ${video.id}.mp4:`, error);
+        }
+      }
     }
   }
 
