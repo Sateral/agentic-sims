@@ -2,6 +2,10 @@ import { spawn } from 'child_process';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { prisma } from '@/lib/prisma';
+import { bouncing_balls_script } from '@/scripts/python simulations/bouncing_balls';
+import { particle_physics_script } from '@/scripts/python simulations/particle_physics';
+import { fluid_dynamics_script } from '@/scripts/python simulations/fluid_dynamics';
+import { gravity_sim_script } from '@/scripts/python simulations/gravity_sim';
 
 export interface SimulationParameters {
   type: string;
@@ -142,79 +146,7 @@ export class VideoGenerator {
     params: SimulationParameters,
     outputPath: string
   ): Promise<void> {
-    const pythonScript = `
-import pygame
-import random
-import math
-import cv2
-import numpy as np
-
-# Initialize pygame
-pygame.init()
-WIDTH, HEIGHT = ${params.width}, ${params.height}
-FPS = ${params.fps}
-DURATION = ${params.duration}
-
-# Colors
-BACKGROUND = '${params.backgroundColor || '#000000'}'
-BALL_COLORS = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
-
-class Ball:
-    def __init__(self):
-        self.x = random.randint(20, WIDTH - 20)
-        self.y = random.randint(20, HEIGHT - 20)
-        self.vx = random.uniform(-5, 5)
-        self.vy = random.uniform(-5, 5)
-        self.radius = random.randint(10, 30)
-        self.color = random.choice(BALL_COLORS)
-        
-    def update(self):
-        self.x += self.vx
-        self.y += self.vy
-        
-        # Bounce off walls
-        if self.x <= self.radius or self.x >= WIDTH - self.radius:
-            self.vx *= -0.9
-        if self.y <= self.radius or self.y >= HEIGHT - self.radius:
-            self.vy *= -0.9
-            
-        # Apply gravity
-        self.vy += ${params.gravity || 0.1}
-        
-        # Damping
-        self.vx *= ${params.damping || 0.999}
-        self.vy *= ${params.damping || 0.999}
-
-# Create balls
-balls = [Ball() for _ in range(${params.particleCount || 15})]
-
-# Video writer
-fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-out = cv2.VideoWriter('${this.formatPathForPython(
-      outputPath
-    )}', fourcc, FPS, (WIDTH, HEIGHT))
-
-# Simulation loop
-for frame in range(FPS * DURATION):
-    surface = pygame.Surface((WIDTH, HEIGHT))
-    surface.fill(pygame.Color(BACKGROUND))
-    
-    for ball in balls:
-        ball.update()
-        pygame.draw.circle(surface, pygame.Color(ball.color), 
-                         (int(ball.x), int(ball.y)), ball.radius)
-    
-    # Convert to numpy array for OpenCV
-    frame_array = pygame.surfarray.array3d(surface)
-    frame_array = np.rot90(frame_array)
-    frame_array = np.flipud(frame_array)
-    frame_array = cv2.cvtColor(frame_array, cv2.COLOR_RGB2BGR)
-    
-    out.write(frame_array)
-
-out.release()
-pygame.quit()
-`;
+    const pythonScript = bouncing_balls_script(params, outputPath);
 
     await this.runPythonScript(pythonScript);
   }
@@ -227,62 +159,7 @@ pygame.quit()
     outputPath: string
   ): Promise<void> {
     // For now, use Python implementation, but could be replaced with C++
-    const pythonScript = `
-import numpy as np
-import cv2
-import random
-import math
-
-WIDTH, HEIGHT = ${params.width}, ${params.height}
-FPS = ${params.fps}
-DURATION = ${params.duration}
-PARTICLE_COUNT = ${params.particleCount || 100}
-
-class Particle:
-    def __init__(self):
-        self.x = random.uniform(0, WIDTH)
-        self.y = random.uniform(0, HEIGHT)
-        self.vx = random.uniform(-2, 2)
-        self.vy = random.uniform(-2, 2)
-        self.life = 1.0
-        self.decay = random.uniform(0.01, 0.03)
-        
-    def update(self):
-        self.x += self.vx
-        self.y += self.vy
-        self.life -= self.decay
-        
-        # Wrap around edges
-        if self.x < 0: self.x = WIDTH
-        if self.x > WIDTH: self.x = 0
-        if self.y < 0: self.y = HEIGHT
-        if self.y > HEIGHT: self.y = 0
-
-particles = [Particle() for _ in range(PARTICLE_COUNT)]
-
-fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-out = cv2.VideoWriter('${this.formatPathForPython(
-      outputPath
-    )}', fourcc, FPS, (WIDTH, HEIGHT))
-
-for frame in range(FPS * DURATION):
-    image = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
-    
-    for particle in particles:
-        particle.update()
-        
-        if particle.life <= 0:
-            particle.__init__()  # Reset particle
-            
-        # Draw particle with life-based alpha
-        alpha = max(0, particle.life)
-        color = (int(255 * alpha), int(200 * alpha), int(100 * alpha))
-        cv2.circle(image, (int(particle.x), int(particle.y)), 2, color, -1)
-    
-    out.write(image)
-
-out.release()
-`;
+    const pythonScript = particle_physics_script(params, outputPath);
 
     await this.runPythonScript(pythonScript);
   }
@@ -294,49 +171,7 @@ out.release()
     params: SimulationParameters,
     outputPath: string
   ): Promise<void> {
-    const pythonScript = `
-import numpy as np
-import cv2
-from scipy.ndimage import gaussian_filter
-
-WIDTH, HEIGHT = ${params.width}, ${params.height}
-FPS = ${params.fps}
-DURATION = ${params.duration}
-
-# Create fluid grid
-grid_size = 64
-fluid = np.random.random((grid_size, grid_size)) * 0.1
-velocity_x = np.zeros((grid_size, grid_size))
-velocity_y = np.zeros((grid_size, grid_size))
-
-fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-out = cv2.VideoWriter('${this.formatPathForPython(
-      outputPath
-    )}', fourcc, FPS, (WIDTH, HEIGHT))
-
-for frame in range(FPS * DURATION):
-    # Add disturbance
-    if frame % 30 == 0:
-        x, y = np.random.randint(10, grid_size-10), np.random.randint(10, grid_size-10)
-        fluid[y-5:y+5, x-5:x+5] += 0.5
-    
-    # Simple fluid simulation
-    fluid = gaussian_filter(fluid, sigma=0.5)
-    fluid *= 0.995  # Decay
-    
-    # Resize to output dimensions
-    fluid_resized = cv2.resize(fluid, (WIDTH, HEIGHT))
-    
-    # Convert to color
-    colored = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
-    colored[:, :, 0] = np.clip(fluid_resized * 255, 0, 255)
-    colored[:, :, 1] = np.clip(fluid_resized * 200, 0, 255)
-    colored[:, :, 2] = np.clip(fluid_resized * 150, 0, 255)
-    
-    out.write(colored)
-
-out.release()
-`;
+    const pythonScript = fluid_dynamics_script(params, outputPath);
 
     await this.runPythonScript(pythonScript);
   }
@@ -348,71 +183,7 @@ out.release()
     params: SimulationParameters,
     outputPath: string
   ): Promise<void> {
-    const pythonScript = `
-import numpy as np
-import cv2
-import math
-
-WIDTH, HEIGHT = ${params.width}, ${params.height}
-FPS = ${params.fps}
-DURATION = ${params.duration}
-
-class Body:
-    def __init__(self, x, y, mass, color):
-        self.x = x
-        self.y = y
-        self.vx = 0
-        self.vy = 0
-        self.mass = mass
-        self.color = color
-        self.radius = int(math.sqrt(mass))
-
-bodies = [
-    Body(WIDTH//2, HEIGHT//2, 1000, (255, 255, 0)),  # Sun
-    Body(WIDTH//2 + 100, HEIGHT//2, 50, (100, 149, 237)),  # Planet 1
-    Body(WIDTH//2 - 80, HEIGHT//2, 30, (220, 20, 60)),    # Planet 2
-    Body(WIDTH//2, HEIGHT//2 + 120, 40, (50, 205, 50))    # Planet 3
-]
-
-# Give planets initial velocity
-bodies[1].vy = -2
-bodies[2].vy = 2.5
-bodies[3].vx = -1.8
-
-fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-out = cv2.VideoWriter('${this.formatPathForPython(
-      outputPath
-    )}', fourcc, FPS, (WIDTH, HEIGHT))
-
-for frame in range(FPS * DURATION):
-    image = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
-    
-    # Calculate gravitational forces
-    for i, body1 in enumerate(bodies):
-        for j, body2 in enumerate(bodies):
-            if i != j:
-                dx = body2.x - body1.x
-                dy = body2.y - body1.y
-                distance = math.sqrt(dx*dx + dy*dy)
-                
-                if distance > body1.radius + body2.radius:
-                    force = 0.1 * body1.mass * body2.mass / (distance * distance)
-                    body1.vx += force * dx / distance / body1.mass
-                    body1.vy += force * dy / distance / body1.mass
-    
-    # Update positions
-    for body in bodies:
-        body.x += body.vx
-        body.y += body.vy
-        
-        # Draw body
-        cv2.circle(image, (int(body.x), int(body.y)), body.radius, body.color, -1)
-    
-    out.write(image)
-
-out.release()
-`;
-
+    const pythonScript = gravity_sim_script(params, outputPath);
     await this.runPythonScript(pythonScript);
   }
 
@@ -459,7 +230,7 @@ out.release()
       type,
       width: 1080,
       height: 1920, // Vertical format for shorts
-      duration: 15, // 15 seconds
+      duration: 60, // 60 seconds
       fps: 30,
     };
 
