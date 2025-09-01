@@ -56,6 +56,7 @@ model Upload {
   
   video       Video @relation(fields: [videoId], references: [id])
   metrics     Metric[]
+  metricSnapshots MetricSnapshot[]
   
   @@map("uploads")
 }
@@ -72,6 +73,32 @@ model Metric {
   upload    Upload @relation(fields: [uploadId], references: [id])
   
   @@map("metrics")
+}
+
+model MetricSnapshot {
+  id          String   @id @default(cuid())
+  uploadId    String
+  views       Int      @default(0)
+  likes       Int      @default(0)
+  comments    Int      @default(0)
+  shares      Int      @default(0)
+
+  viewsDelta  Int      @default(0) // change since last snapshot
+  likesDelta  Int      @default(0)
+  commentsDelta Int    @default(0)
+  sharesDelta Int      @default(0)
+
+  timestamp   DateTime @default(now())
+  hour        Int      // 0-23, extracted from timestamp for easy querying
+  dayOfYear   Int      // 1-366, for efficient date-based queries
+  year        Int      // for year-based filtering
+  
+  upload      Upload @relation(fields: [uploadId], references: [id])
+  
+  @@unique([uploadId, timestamp])
+  @@index([uploadId, year, dayOfYear, hour])
+  @@index([timestamp])
+  @@map("metric_snapshots")
 }
 
 model ScheduledJob {

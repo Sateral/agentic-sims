@@ -151,6 +151,7 @@ export const simulationRouter = createTRPCRouter({
             );
             const analysis = await videoAnalyzer.analyzeVideo(
               videoPath,
+              video.id,
               video.simulation.type
             );
 
@@ -241,6 +242,7 @@ export const simulationRouter = createTRPCRouter({
         );
         const analysis = await videoAnalyzer.analyzeVideo(
           videoPath,
+          video.id,
           video.simulation.type
         );
 

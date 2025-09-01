@@ -36,7 +36,7 @@ const TopVideos = () => {
       </CardHeader>
       <CardContent>
         <div className="space-y-3">
-          {topVideos?.map((video: any, index: number) => (
+          {topVideos?.map((video, index: number) => (
             <div key={video.id} className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-sm font-medium">
                 {index + 1}
@@ -46,7 +46,7 @@ const TopVideos = () => {
                   {video.video.title}
                 </div>
                 <div className="text-xs text-gray-500">
-                  {video.metrics[0].views.toLocaleString()} views
+                  {video.metricSnapshots[0].views.toLocaleString()} views
                 </div>
               </div>
               <Badge variant="outline" className="text-xs">

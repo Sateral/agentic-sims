@@ -1,6 +1,7 @@
 import { VideoAnalyzer } from './analyzeSimulation';
 import { PlatformServiceFactory } from '../platforms/platformServices';
 import { VideoGenerator } from '../video/videoGenerator';
+import { MetricsService } from '../metrics/metricsService';
 import { prisma } from '@/lib/prisma';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -8,6 +9,7 @@ import path from 'path';
 export class UploadAgent {
   private videoAnalyzer = new VideoAnalyzer();
   private videoGenerator = new VideoGenerator();
+  private metricsService = new MetricsService();
 
   async processDailyUploads() {
     console.log('Starting daily upload process...');
@@ -228,58 +230,32 @@ export class UploadAgent {
   }
 
   /**
-   * Sync metrics for all uploaded videos
+   * Sync metrics for all uploaded videos with hourly snapshots
    */
   async syncMetrics() {
     console.log('Syncing metrics for all uploads...');
-
-    const uploads = await prisma.upload.findMany({
-      where: {
-        status: 'published',
-      },
-    });
-
-    for (const upload of uploads) {
-      try {
-        const platformService = PlatformServiceFactory.createService(
-          upload.platform
-        );
-        const metrics = await platformService.getVideoMetrics(
-          upload.platformId
-        );
-
-        // Update or create metrics record
-        const existingMetric = await prisma.metric.findFirst({
-          where: { uploadId: upload.id },
-        });
-
-        if (existingMetric) {
-          await prisma.metric.update({
-            where: { id: existingMetric.id },
-            data: {
-              views: metrics.views,
-              likes: metrics.likes,
-              comments: metrics.comments,
-              shares: metrics.shares,
-            },
-          });
-        } else {
-          await prisma.metric.create({
-            data: {
-              uploadId: upload.id,
-              views: metrics.views,
-              likes: metrics.likes,
-              comments: metrics.comments,
-              shares: metrics.shares,
-            },
-          });
-        }
-      } catch (error) {
-        console.error(`Failed to sync metrics for upload ${upload.id}:`, error);
-      }
-    }
-
+    await this.metricsService.collectHourlySnapshots();
     console.log('Metrics sync completed');
+  }
+
+  /**
+   * Get metrics data for visualization based on time range
+   */
+  async getMetricsForTimeRange(
+    uploadId: string,
+    range: 'today' | 'week' | 'month'
+  ) {
+    return await this.metricsService.getMetricsForTimeRange(uploadId, range);
+  }
+
+  /**
+   * Get aggregated metrics for dashboard
+   */
+  async getAggregatedMetrics(
+    uploadId: string,
+    range: 'today' | 'week' | 'month'
+  ) {
+    return await this.metricsService.getAggregatedMetrics(uploadId, range);
   }
 
   /**
@@ -288,8 +264,8 @@ export class UploadAgent {
   async cleanup() {
     console.log('Starting cleanup process...');
 
-    const fs = require('fs').promises;
     const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const oneMonthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
     // Delete old video files (videos are not stored permanently)
     try {
@@ -309,6 +285,13 @@ export class UploadAgent {
       console.error('Failed to clean up video files:', error);
     }
 
+    // Clean up old metric snapshots (older than 1 month)
+    try {
+      await this.metricsService.cleanupOldSnapshots();
+    } catch (error) {
+      console.error('Failed to clean up metric snapshots:', error);
+    }
+
     // Archive old simulation data (keep for analytics)
     const oldSimulations = await prisma.simulation.findMany({
       where: {
@@ -322,5 +305,72 @@ export class UploadAgent {
     console.log(`Found ${oldSimulations.length} old simulations for archival`);
 
     console.log('Cleanup completed');
+  }
+
+  /**
+   * Schedule hourly metrics collection
+   */
+  async scheduleHourlyMetricsCollection() {
+    console.log('Starting hourly metrics collection...');
+
+    // This should be called every hour by a cron job or scheduler
+    await this.syncMetrics();
+
+    // Also run cleanup periodically (e.g., daily)
+    const lastCleanup = await prisma.scheduledJob.findFirst({
+      where: {
+        type: 'cleanup',
+        status: 'completed',
+      },
+      orderBy: {
+        completedAt: 'desc',
+      },
+    });
+
+    const shouldRunCleanup =
+      !lastCleanup ||
+      (lastCleanup.completedAt &&
+        new Date().getTime() - lastCleanup.completedAt.getTime() >
+          24 * 60 * 60 * 1000);
+
+    if (shouldRunCleanup) {
+      try {
+        await prisma.scheduledJob.create({
+          data: {
+            type: 'cleanup',
+            status: 'running',
+            scheduledAt: new Date(),
+          },
+        });
+
+        await this.cleanup();
+
+        await prisma.scheduledJob.updateMany({
+          where: {
+            type: 'cleanup',
+            status: 'running',
+          },
+          data: {
+            status: 'completed',
+            completedAt: new Date(),
+          },
+        });
+      } catch (error) {
+        console.error('Cleanup failed:', error);
+        await prisma.scheduledJob.updateMany({
+          where: {
+            type: 'cleanup',
+            status: 'running',
+          },
+          data: {
+            status: 'failed',
+            error: error instanceof Error ? error.message : 'Unknown error',
+            completedAt: new Date(),
+          },
+        });
+      }
+    }
+
+    console.log('Hourly metrics collection completed');
   }
 }
