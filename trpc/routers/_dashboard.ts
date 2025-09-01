@@ -22,14 +22,14 @@ export const dashboardRouter = createTRPCRouter({
           },
         },
       }),
-      prisma.metric.aggregate({
-        _avg: { views: true },
+      prisma.metricSnapshot.aggregate({
+        _avg: { viewsDelta: true },
       }),
-      prisma.metric.aggregate({
-        _sum: { views: true },
+      prisma.metricSnapshot.aggregate({
+        _sum: { viewsDelta: true },
       }),
-      prisma.metric.aggregate({
-        _sum: { likes: true },
+      prisma.metricSnapshot.aggregate({
+        _sum: { likesDelta: true },
       }),
       prisma.upload.groupBy({
         by: ['platform'],
@@ -41,9 +41,9 @@ export const dashboardRouter = createTRPCRouter({
       totalVideos,
       totalUploads,
       todayUploads,
-      avgViews: Math.round(avgViews._avg.views || 0),
-      totalViews: totalViews._sum.views || 0,
-      totalLikes: totalLikes._sum.likes || 0,
+      avgViews: Math.round(avgViews._avg.viewsDelta || 0),
+      totalViews: totalViews._sum.viewsDelta || 0,
+      totalLikes: totalLikes._sum.likesDelta || 0,
       platformStats: platformStats.map((stat) => ({
         platform: stat.platform,
         count: stat._count._all,
@@ -60,8 +60,8 @@ export const dashboardRouter = createTRPCRouter({
           video: {
             include: { simulation: true },
           },
-          metrics: {
-            orderBy: { updatedAt: 'desc' },
+          metricSnapshots: {
+            orderBy: { timestamp: 'desc' },
             take: 1,
           },
         },
@@ -80,36 +80,165 @@ export const dashboardRouter = createTRPCRouter({
       })
     )
     .query(async ({ input }) => {
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - input.days);
+      try {
+        const now = new Date();
+        const cutOffDate = new Date(
+          Date.now() - input.days * 24 * 60 * 60 * 1000
+        );
+        const deltaField = `${input.metric}Delta`; // e.g. "viewsDelta"
 
-      const metrics = await prisma.metric.findMany({
-        where: {
-          updatedAt: { gte: startDate },
-          ...(input.platform && {
-            upload: { platform: input.platform },
-          }),
-        },
-        include: {
-          upload: {
-            select: { platform: true, uploadedAt: true },
+        // fetch snapshots in range
+        const metrics = await prisma.metricSnapshot.findMany({
+          where: {
+            timestamp: { gte: cutOffDate },
+            ...(input.platform && { upload: { platform: input.platform } }),
           },
-        },
-        orderBy: { updatedAt: 'asc' },
-      });
+          include: { upload: { select: { platform: true, uploadedAt: true } } },
+          orderBy: { timestamp: 'asc' },
+        });
 
-      // Group by date
-      const groupedMetrics = metrics.reduce((acc, metric) => {
-        const date = metric.updatedAt.toISOString().split('T')[0];
-        if (!acc[date]) {
-          acc[date] = { date, value: 0, count: 0 };
+        // Decide granularity
+        const useHourly = input.days <= 1;
+
+        // bucket key helper
+        const getBucketKey = (d: Date) => {
+          const dt = new Date(d);
+          if (useHourly) {
+            dt.setMinutes(0, 0, 0);
+            dt.setSeconds(0, 0);
+            dt.setMilliseconds(0);
+            return dt.toISOString(); // "2025-08-19T13:00:00.000Z"
+          } else {
+            dt.setHours(0, 0, 0, 0);
+            return dt.toISOString().split('T')[0]; // "2025-08-19"
+          }
+        };
+
+        // prepare buckets (guarantee we have every bucket)
+        const buckets: Record<
+          string,
+          { date: string; value: number; count: number }
+        > = {};
+        const iter = new Date(cutOffDate);
+        if (useHourly) {
+          iter.setMinutes(0, 0, 0);
+          iter.setSeconds(0, 0);
+          iter.setMilliseconds(0);
+          while (iter <= now) {
+            const key = getBucketKey(iter);
+            buckets[key] = { date: key, value: 0, count: 0 };
+            iter.setHours(iter.getHours() + 1);
+          }
+        } else {
+          iter.setHours(0, 0, 0, 0);
+          while (iter <= now) {
+            const key = getBucketKey(iter);
+            buckets[key] = { date: key, value: 0, count: 0 };
+            iter.setDate(iter.getDate() + 1);
+          }
         }
-        acc[date].value += metric[input.metric];
-        acc[date].count += 1;
-        return acc;
-      }, {} as Record<string, { date: string; value: number; count: number }>);
 
-      return Object.values(groupedMetrics);
+        // If no snapshots were returned, return the empty-but-populated buckets array
+        if (!metrics || metrics.length === 0) {
+          console.debug(
+            '[getMetricsOverTime] no snapshots found; returning empty buckets',
+            {
+              days: input.days,
+              platform: input.platform,
+              metric: input.metric,
+            }
+          );
+          return Object.values(buckets).sort((a, b) =>
+            a.date < b.date ? -1 : 1
+          );
+        }
+
+        // fast-path: all snapshots already have delta field
+        const allHaveDelta =
+          metrics.length > 0 &&
+          metrics.every((m) => typeof (m as any)[deltaField] === 'number');
+
+        if (allHaveDelta) {
+          for (const m of metrics) {
+            const key = getBucketKey(new Date(m.timestamp));
+            if (!buckets[key]) buckets[key] = { date: key, value: 0, count: 0 };
+            buckets[key].value += (m as any)[deltaField] ?? 0;
+            buckets[key].count += 1;
+          }
+          return Object.values(buckets).sort((a, b) =>
+            a.date < b.date ? -1 : 1
+          );
+        }
+
+        // fallback: compute deltas per upload for snapshots missing deltas
+        const byUpload = metrics.reduce<Record<string, typeof metrics>>(
+          (acc, s) => {
+            (acc[s.uploadId] ||= []).push(s);
+            return acc;
+          },
+          {}
+        );
+
+        const uploadIds = Object.keys(byUpload);
+        const beforeMap: Record<string, any | null> = {};
+
+        // fetch the last snapshot before cutoff for each upload
+        await Promise.all(
+          uploadIds.map(async (uid) => {
+            const lastBefore = await prisma.metricSnapshot.findFirst({
+              where: { uploadId: uid, timestamp: { lt: cutOffDate } },
+              orderBy: { timestamp: 'desc' },
+            });
+            beforeMap[uid] = lastBefore ?? null;
+          })
+        );
+
+        // compute per-upload deltas and bucket them
+        for (const [uploadId, snaps] of Object.entries(byUpload)) {
+          snaps.sort(
+            (a, b) =>
+              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+          );
+          let prev = beforeMap[uploadId]
+            ? (beforeMap[uploadId] as any)[input.metric] ?? 0
+            : 0;
+
+          for (const s of snaps) {
+            const cur = (s as any)[input.metric] ?? 0;
+            let delta: number;
+
+            if (typeof (s as any)[deltaField] === 'number') {
+              delta = (s as any)[deltaField];
+            } else {
+              delta = cur - prev;
+              if (delta < 0) {
+                // treat as counter reset; count the current value as the increment
+                delta = cur;
+              }
+            }
+
+            prev = cur;
+            const key = getBucketKey(new Date(s.timestamp));
+            if (!buckets[key]) buckets[key] = { date: key, value: 0, count: 0 };
+            buckets[key].value += delta;
+            buckets[key].count += 1;
+          }
+        }
+
+        return Object.values(buckets).sort((a, b) =>
+          a.date < b.date ? -1 : 1
+        );
+      } catch (err) {
+        // log error and rethrow a readable error for the client
+        console.error('[getMetricsOverTime] error', {
+          error: err,
+          input,
+        });
+        // Ensure we don't return undefined; rethrow a tRPC-friendly error
+        throw new Error(
+          'Failed to compute metrics over time. See server logs for details.'
+        );
+      }
     }),
 
   getPlatformComparison: baseProcedure.query(async () => {
@@ -120,7 +249,7 @@ export const dashboardRouter = createTRPCRouter({
 
     const platformMetrics = await Promise.all(
       platforms.map(async (platform) => {
-        const metrics = await prisma.metric.aggregate({
+        const metrics = await prisma.metricSnapshot.aggregate({
           where: {
             upload: { platform: platform.platform },
           },
@@ -183,8 +312,8 @@ export const dashboardRouter = createTRPCRouter({
           video: {
             include: { simulation: true },
           },
-          metrics: {
-            orderBy: { updatedAt: 'desc' },
+          metricSnapshots: {
+            orderBy: { timestamp: 'desc' },
             take: 1,
           },
         },
@@ -192,10 +321,10 @@ export const dashboardRouter = createTRPCRouter({
 
       // Sort by the selected metric
       const sorted = uploads
-        .filter((upload) => upload.metrics.length > 0)
+        .filter((upload) => upload.metricSnapshots.length > 0)
         .sort((a, b) => {
-          const aValue = a.metrics[0]?.[input.sortBy] || 0;
-          const bValue = b.metrics[0]?.[input.sortBy] || 0;
+          const aValue = a.metricSnapshots[0]?.[input.sortBy] || 0;
+          const bValue = b.metricSnapshots[0]?.[input.sortBy] || 0;
           return bValue - aValue;
         })
         .slice(0, input.limit);

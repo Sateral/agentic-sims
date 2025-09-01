@@ -3,6 +3,7 @@ import { baseProcedure, createTRPCRouter } from '../init';
 import { dashboardRouter } from './_dashboard';
 import { simulationRouter } from './_simulation';
 import { youtubeRouter } from './_youtube';
+import { metricsRouter } from './_metrics';
 
 export const appRouter = createTRPCRouter({
   hello: baseProcedure
@@ -19,6 +20,7 @@ export const appRouter = createTRPCRouter({
   dashboard: dashboardRouter,
   simulation: simulationRouter,
   youtube: youtubeRouter,
+  metrics: metricsRouter,
 });
 
 // export type definition of API

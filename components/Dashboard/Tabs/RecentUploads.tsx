@@ -27,7 +27,7 @@ const RecentUploads = () => {
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          {recentUploads?.map((upload: any) => (
+          {recentUploads?.map((upload) => (
             <div
               key={upload.id}
               className="flex items-center justify-between p-4 border rounded-lg"
@@ -58,23 +58,23 @@ const RecentUploads = () => {
                   {upload.video.simulation.type} • {upload.video.duration}s •
                   {new Date(upload.uploadedAt).toLocaleDateString()}
                 </div>
-                {upload.metrics[0] && (
+                {upload.metricSnapshots[0] && (
                   <div className="flex gap-4 text-sm text-gray-500 mt-2">
                     <span className="flex items-center gap-1">
                       <Eye className="w-3 h-3" />
-                      {upload.metrics[0].views.toLocaleString()}
+                      {upload.metricSnapshots[0].views.toLocaleString()}
                     </span>
                     <span className="flex items-center gap-1">
                       <Heart className="w-3 h-3" />
-                      {upload.metrics[0].likes.toLocaleString()}
+                      {upload.metricSnapshots[0].likes.toLocaleString()}
                     </span>
                     <span className="flex items-center gap-1">
                       <MessageCircle className="w-3 h-3" />
-                      {upload.metrics[0].comments}
+                      {upload.metricSnapshots[0].comments}
                     </span>
                     <span className="flex items-center gap-1">
                       <Share className="w-3 h-3" />
-                      {upload.metrics[0].shares}
+                      {upload.metricSnapshots[0].shares}
                     </span>
                   </div>
                 )}
